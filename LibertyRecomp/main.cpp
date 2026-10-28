@@ -358,10 +358,12 @@ static void LibertyWatchdogLoop()
                 have_ctx = true;
             }
             fprintf(stderr,
-                    "  tid=%u name='%s' run=%d guest=%d main=%d lr=0x%08X%08X r1=0x%08X r3=0x%08X ctx=%d\n",
+                    "  tid=%u name='%s' run=%d guest=%d main=%d entry=0x%08X lr=0x%08X%08X r1=0x%08X r3=0x%08X ctx=%d\n",
                     t->thread_id(), t->name().c_str(),
                     (int)t->is_running(), (int)t->is_guest_thread(),
-                    (int)t->main_thread(), lr_hi, lr_lo, r1, r3, (int)have_ctx);
+                    (int)t->main_thread(),
+                    static_cast<uint32_t>(t->creation_params()->start_address),
+                    lr_hi, lr_lo, r1, r3, (int)have_ctx);
             // Stack-walk disabled: it served its purpose (identifying
             // sub_82847D48/buddy-allocator as the suspected hang site) but
             // faults when it reaches unmapped pages near the top of a guest

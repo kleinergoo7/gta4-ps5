@@ -46,6 +46,20 @@ semaphore whose producer never runs.
 Open question: who signals that worker semaphore, and whether any of the
 boot-unblocking gates below sit on the enqueue path that should signal it.
 
+**Answered for the gates:** they are innocent. In a 40 s run every gate trigger
+occurs inside the same ~400 ms window as the first frames
+(27.2 s–27.6 s); after that, zero triggers. They are init-only and are not on
+the steady-state path.
+
+**Thread graph:** ~30 guest threads exist; most are parked in the generic
+thread trampoline (`0x82849940` → `sub_82849928` → `sub_82A12C30`). Entry
+points seen: `0x82849940` (trampoline), `0x82A11290` (module entry),
+`0x821909D0`, `0x82A4F0E0`, plus `0x00000000` for host threads. No thread is
+running a frame loop.
+
+Remaining lead: find the owner/producer of semaphore `0xF8001080` (needs
+object-table inspection late in boot, or hooking the semaphore release path).
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
