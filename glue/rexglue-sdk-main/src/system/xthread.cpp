@@ -784,8 +784,17 @@ void XThread::DeliverAPCs() {
       if (dispatcher->GetFunction(apc->kernel_routine)) {
         uint64_t kernel_args[] = {apc_ptr, scratch_address_ + 0, scratch_address_ + 4,
                                   scratch_address_ + 8, scratch_address_ + 12};
+        // Ported from upstream rexglue ff43ff6b: deliver the APC like the 360
+        // kernel's trap frame does, preserving the interrupted guest state
+        // (registers, CRs, FPSCR) instead of letting the routine clobber it.
+        auto* ctx = thread_state_->context();
+        const PPCContext saved = *ctx;
+        const uint32_t saved_csr = saved.fpscr.csr;
         dispatcher->Execute(thread_state_.get(), apc->kernel_routine, kernel_args,
                             rex::countof(kernel_args));
+        *ctx = saved;
+        ctx->fpscr.csr = saved_csr;
+        ctx->fpscr.setcsr(saved_csr);
       } else {
         REXSYS_ERROR("DeliverAPCs: kernel_routine {:08X} not found", uint32_t(apc->kernel_routine));
       }
@@ -802,8 +811,15 @@ void XThread::DeliverAPCs() {
     if (normal_routine) {
       if (dispatcher->GetFunction(normal_routine)) {
         uint64_t normal_args[] = {normal_context, arg1, arg2};
+        // Trap-frame delivery (see kernel routine above).
+        auto* ctx = thread_state_->context();
+        const PPCContext saved = *ctx;
+        const uint32_t saved_csr = saved.fpscr.csr;
         dispatcher->Execute(thread_state_.get(), normal_routine, normal_args,
                             rex::countof(normal_args));
+        *ctx = saved;
+        ctx->fpscr.csr = saved_csr;
+        ctx->fpscr.setcsr(saved_csr);
       } else {
         REXSYS_ERROR("DeliverAPCs: normal_routine {:08X} not found", normal_routine);
       }
