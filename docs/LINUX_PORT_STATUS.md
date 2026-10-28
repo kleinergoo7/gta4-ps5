@@ -29,11 +29,19 @@ The game boots but never reaches the menu.
 - The frame driver `sub_821412B8` is called **once** (from `8214004C`), so the
   main thread has no frame loop; it ends up in the post-init wait loop
   `sub_82140088` (`KeDelayExecutionThread`).
-- Frames come from the render thread (`821B5B20 -> 821C5BA0 -> 828C15C8`),
-  which parks on a semaphore (`0xF8001080`, `NtWaitForSingleObjectEx`) and is
-  never woken. `presents=2`, `draws=6`, then nothing.
+- `sub_82145420(1,0)` — the run entry called right after — **returns 0 after
+  ~38 ms**. Its early-out guard byte `0x831D5345` is 0, so it runs and then
+  falls through to the plain epilogue: it is a mode-setter, not the frame loop.
+- The render thread (`821B5B20 -> 821C5BA0 -> 828C15C8`) parks on a semaphore
+  (`0xF8001080`, `NtWaitForSingleObjectEx`) and is never woken.
+  `presents=2`, `draws=6`, then nothing.
 - After ~15 s every log source goes silent: no I/O, no streaming. This is a
   hard wait, not slow loading.
+
+So no function in the boot chain that we have identified runs a frame loop.
+The next question is where the loop is created: most likely a guest thread
+that is started (or woken) by a path that a stub never reaches, or a job
+semaphore whose producer never runs.
 
 Open question: who signals that worker semaphore, and whether any of the
 boot-unblocking gates below sit on the enqueue path that should signal it.
