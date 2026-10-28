@@ -10037,6 +10037,45 @@ PPC_FUNC_HOOK(sub_82A488B8)
     __imp__sub_82A488B8(ctx, base);
 }
 
+// sub_828C15C8 — render dispatcher probe: log the gate value it observes and
+// whether it enters the render body.
+PPC_FUNC_IMPL(__imp__sub_828C15C8);
+PPC_FUNC_HOOK(sub_828C15C8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 6 || (n % 500) == 0)
+    {
+        int32_t gate = (int32_t)PPC_LOAD_U32(0x82B0B48C);
+        LOGF_WARNING("[RDISP] sub_828C15C8 call#{} gate={} r3={:#x}", n, gate, ctx.r3.u32);
+    }
+    __imp__sub_828C15C8(ctx, base);
+}
+
+// sub_82144188 / sub_821B5B20 — render-submit chain probes: if these stop
+// being called while presents is stuck, the loop above them exited.
+PPC_FUNC_IMPL(__imp__sub_82144188);
+PPC_FUNC_HOOK(sub_82144188)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 300) == 0)
+        LOGF_WARNING("[SUBMIT] sub_82144188 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82144188(ctx, base);
+}
+
+PPC_FUNC_IMPL(__imp__sub_821B5B20);
+PPC_FUNC_HOOK(sub_821B5B20)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 300) == 0)
+        LOGF_WARNING("[SUBMIT] sub_821B5B20 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_821B5B20(ctx, base);
+}
+
 // sub_821904B8 — event waker: it calls KeSetEvent on the work event
 // (0x831D52F0) at 0x82190550. Probe whether it is ever called after init and
 // from where.

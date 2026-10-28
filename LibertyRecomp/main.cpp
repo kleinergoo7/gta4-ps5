@@ -325,18 +325,15 @@ static void LibertyWatchdogLoop()
         fprintf(stderr, "[WATCHDOG] tick=%llu t=%.1fs threads=%zu\n",
                 (unsigned long long)tick, elapsed_s, threads.size());
         uint8_t* mem_base = g_memory.base;
-        if (mem_base && tick >= 20) {
-            // Experiment: the producer thread has been parked on this event
-            // since init and nothing ever signals it. Signal it every tick and
-            // see whether work (and therefore frames) resumes. Logged.
-            auto* eventPtr = reinterpret_cast<rex::system::X_KEVENT*>(
-                g_memory.Translate(0x831D52F0));
-            uint32_t result = rex::kernel::xboxkrnl::xeKeSetEvent(eventPtr, 1, 0);
-            if (tick <= 24 || (tick % 20) == 0) {
-                fprintf(stderr, "[EVSIGNAL] tick=%llu xeKeSetEvent(0x831D52F0) -> %u\n",
-                        (unsigned long long)tick, result);
-                fflush(stderr);
-            }
+        if (mem_base && tick >= 10 && tick <= 10) {
+            // One-shot observation only (no writes): report the render gate and
+            // the scene pointer at the moment the submit loop is running.
+            fprintf(stderr, "[GATEOBS] gate=%d scene=0x%08X\n",
+                    (int32_t)__builtin_bswap32(
+                        *reinterpret_cast<uint32_t*>(mem_base + 0x82B0B48C)),
+                    __builtin_bswap32(
+                        *reinterpret_cast<uint32_t*>(mem_base + 0x831C2458)));
+            fflush(stderr);
         }
 
         if (mem_base && tick == 20) {

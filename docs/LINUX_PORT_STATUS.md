@@ -117,6 +117,22 @@ That moves the wall upstream: the guest thread that submits render work
 (`828C5BA0 -> 821B3990 -> ... -> 828C15C8 -> 828C1228`) stops after two
 frames. The next question is why that dispatch loop stops looping.
 
+**Probes that followed (hypotheses eliminated):**
+- `sub_821B5B20 -> sub_82144188` is called **continuously** (hundreds of times
+  per run, always from `LR=0x821B5BF4`), so the submit loop is alive.
+- The render gate `*(0x82B0B48C)` observes `-1` in steady state. Forcing it to
+  `1` every 500 ms (`[GATEPOKE]`, experiment reverted) does **not** resume
+  frames.
+- `sub_828C15C8` is entered with a positive gate (3+ calls) and still emits no
+  draws (`draws=6`, `[FRAME]` count 1).
+
+So the dispatcher runs, the gate is open, and it renders nothing: the scene is
+empty (`0x831C2458` stays 0). The wall is now **world/map streaming never
+loads content**, which is consistent with the empty work queue.**
+
+Next question: what submits streaming work — the task graph whose queue the
+producer thread drains — and why it is never fed.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
