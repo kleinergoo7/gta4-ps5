@@ -432,6 +432,32 @@ Consequence: clearing `ready` is not sufficient. Even with the wait loop
 short-circuited, the boot sequencer stops after two iterations instead of
 advancing to the stage that builds the registry.
 
+## The boot stall is a frame-complete wait (measured)
+
+Entry/exit pairing on the stage-machine loop body found the exact blocking call:
+
+```
+sub_82142230 (stage machine)
+  -> sub_821428C8            (loop body, iteration 2 never returns)
+       -> sub_821B5890       (per-frame scene update, #2 never returns)
+            -> sub_828497D8  (NtWaitForSingleObject, infinite)
+                 handle = [scene + 4024] = 0xF8000044
+```
+
+`sub_828497D8` is the wait wrapper whose LR `0x82849804` matched the earlier
+`[Wait1]` probe, so both observations are the same object.
+
+`0xF8000044` is released **only** from `sub_821B5B20` (the submit/render call,
+caller LRs `0x821B5C48` and `0x821B5C1C`), and that function is called from
+`sub_821B6F18`. In a whole run `sub_821B5B20` runs **once**, at startup; there is
+no second release, so the dispatcher parks forever on the frame-complete wait,
+the boot stage machine never advances past stage 2, `ready` never clears and the
+streaming registry is never built.
+
+`sub_821B6F18` has **no direct caller** in the recompiled corpus — it is reached
+through a guest function pointer. Restoring that per-frame dispatch is the
+behavioural fix this wall needs; it is not a flag or a gate.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

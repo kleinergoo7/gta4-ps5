@@ -10381,6 +10381,65 @@ LOG_STAGE_PROBE(sub_8223DEE8)
 
 // Case-3 entry, reached only when the dispatcher sits in stage 3.
 LOG_STAGE_PROBE(sub_8223CAD8)
+// Case-4/5/6 entries. Together with the case 1/2/3 probes above, whichever
+// fires names the stage the dispatcher selected without reading the stage
+// number itself (it lives in a host register inside the recompiled body).
+LOG_STAGE_PROBE(sub_822440F8)
+LOG_STAGE_PROBE(sub_822422E0)
+LOG_STAGE_PROBE(sub_822438B0)
+
+// Tail calls of the loop body after sub_8222E338, in program order. Entry and
+// exit are paired so a call that never returns is visible.
+#define LOG_TAIL_PROBE(fn)                                                   \
+    PPC_FUNC_IMPL(__imp__##fn);                                              \
+    PPC_FUNC_HOOK(fn)                                                        \
+    {                                                                        \
+        static std::atomic<uint32_t> s_in{0};                                \
+        static std::atomic<uint32_t> s_out{0};                               \
+        uint32_t n = s_in.fetch_add(1) + 1;                                  \
+        if (n <= 6)                                                          \
+            LOGF_WARNING("[BOOTSTAGE] > " #fn " #{}", n);                    \
+        __imp__##fn(ctx, base);                                              \
+        uint32_t m = s_out.fetch_add(1) + 1;                                 \
+        if (m <= 6)                                                          \
+            LOGF_WARNING("[BOOTSTAGE] < " #fn " #{}", m);                    \
+    }
+
+LOG_TAIL_PROBE(sub_821B5A08)
+LOG_TAIL_PROBE(sub_821B3B80)
+LOG_TAIL_PROBE(sub_822BCA90)
+LOG_TAIL_PROBE(sub_821B5890)
+// Callees of sub_821B5890 (the per-frame scene update). Its second call never
+// returns; entry/exit pairing names the blocking call.
+LOG_TAIL_PROBE(sub_821B7EB8)
+LOG_TAIL_PROBE(sub_821B7D28)
+LOG_TAIL_PROBE(sub_82297ED8)
+LOG_TAIL_PROBE(sub_821B88E8)
+LOG_TAIL_PROBE(sub_82343A00)
+LOG_TAIL_PROBE(sub_82347730)
+LOG_TAIL_PROBE(sub_82322548)
+LOG_TAIL_PROBE(sub_8234AAC0)
+LOG_TAIL_PROBE(sub_82350350)
+LOG_TAIL_PROBE(sub_821B7698)
+
+#undef LOG_TAIL_PROBE
+
+// Does the loop body return at all? Entry and exit are counted separately, so
+// entry > exit means the second call is still inside when the run ends.
+PPC_FUNC_IMPL(__imp__sub_821428C8);
+PPC_FUNC_HOOK(sub_821428C8)
+{
+    static std::atomic<uint32_t> s_in{0};
+    static std::atomic<uint32_t> s_out{0};
+    uint32_t n = s_in.fetch_add(1) + 1;
+    if (n <= 6)
+        LOGF_WARNING("[BOOTSTAGE] > sub_821428C8 #{} (enter)", n);
+    __imp__sub_821428C8(ctx, base);
+    uint32_t m = s_out.fetch_add(1) + 1;
+    if (m <= 6)
+        LOGF_WARNING("[BOOTSTAGE] < sub_821428C8 #{} (exit) entries={} exits={}", m, s_in.load(),
+                     s_out.load());
+}
 #undef LOG_STAGE_PROBE
 
 // Registry-init call chain (see docs/GTA_IV_ASSET_STREAMING_SYSTEM.md):
