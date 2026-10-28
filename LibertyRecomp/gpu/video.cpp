@@ -10037,6 +10037,46 @@ PPC_FUNC_HOOK(sub_82A488B8)
     __imp__sub_82A488B8(ctx, base);
 }
 
+// sub_82A12F50 — NtReleaseSemaphore wrapper probe: log which handles are
+// actually released, so we can tell a missing producer from a stalled one.
+PPC_FUNC_IMPL(__imp__sub_82A12F50);
+PPC_FUNC_HOOK(sub_82A12F50)
+{
+    static int s_count = 0;
+    static uint32_t s_seen[16] = {};
+    const uint32_t handle = ctx.r3.u32;
+    bool known = false;
+    for (int i = 0; i < 16; i++)
+    {
+        if (s_seen[i] == handle)
+        {
+            known = true;
+            break;
+        }
+    }
+    if (!known && s_count < 16)
+    {
+        s_seen[s_count++] = handle;
+        LOGF_WARNING("[RelSem] releaser LR={:#x} handle={:#x} delta={}",
+                     static_cast<uint32_t>(ctx.lr), handle, ctx.r4.u32);
+    }
+    __imp__sub_82A12F50(ctx, base);
+}
+
+// sub_821909D0 — producer thread entry (calls KeReleaseSemaphore); probe to
+// see whether it runs, in which order, and when it stops.
+PPC_FUNC_IMPL(__imp__sub_821909D0);
+PPC_FUNC_HOOK(sub_821909D0)
+{
+    static int s_calls = 0;
+    ++s_calls;
+    if (s_calls <= 6)
+        LOGF_WARNING("[PRODUCER] sub_821909D0 enter#{}", s_calls);
+    __imp__sub_821909D0(ctx, base);
+    if (s_calls <= 6)
+        LOGF_WARNING("[PRODUCER] sub_821909D0 exit#{} ret={}", s_calls, ctx.r3.u32);
+}
+
 // sub_821411D8 — loop probe: log entry and returned value.
 PPC_FUNC_IMPL(__imp__sub_821411D8);
 PPC_FUNC_HOOK(sub_821411D8)
@@ -10069,10 +10109,10 @@ PPC_FUNC_IMPL(__imp__sub_82A1A450);
 PPC_FUNC_HOOK(sub_82A1A450)
 {
     static int s_count = 0;
-    static uint32_t s_seen[8] = {};
+    static uint32_t s_seen[32] = {};
     const uint32_t handle = ctx.r3.u32;
     bool known = false;
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 32; i++)
     {
         if (s_seen[i] == handle)
         {
@@ -10080,13 +10120,21 @@ PPC_FUNC_HOOK(sub_82A1A450)
             break;
         }
     }
-    if (!known && s_count < 8)
+    if (!known && s_count < 32)
     {
         s_seen[s_count++] = handle;
         // No object-table lookup here: this fires during early kernel init,
         // where the table may not be safe to query yet (observed crash).
         LOGF_WARNING("[Wait1] waiter LR={:#x} handle={:#x} r5={}",
                      static_cast<uint32_t>(ctx.lr), handle, ctx.r5.u32);
+    }
+    // The render thread is known to park on 0xF8001080; log every waiter for
+    // it (rare) so the blocking site is identified even past the distinct cap.
+    if (handle == 0xF8001080u)
+    {
+        static int s_parkCount = 0;
+        if (++s_parkCount <= 6)
+            LOGF_WARNING("[Wait1-F1080] waiter LR={:#x}", static_cast<uint32_t>(ctx.lr));
     }
     __imp__sub_82A1A450(ctx, base);
 }

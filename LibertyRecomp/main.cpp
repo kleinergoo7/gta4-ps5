@@ -326,13 +326,14 @@ static void LibertyWatchdogLoop()
         if (mem_base && (tick % 10) == 0) {
             // Loader/world-init flags polled by the main thread's idle loop
             // (sub_821458B8 reads these two bytes).
-            fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u guard=%u gate=%d scene=0x%08X presents=%u draws=%u\n",
+            fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u guard=%u gate=%d scene=0x%08X evt=0x%08X presents=%u draws=%u\n",
                     elapsed_s,
                     (unsigned)mem_base[0x831D5335],
                     (unsigned)mem_base[0x831D5348],
                     (unsigned)mem_base[0x831D5345],
                     (int32_t)__builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x82B0B48C)),
                     __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831C2458)),
+                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D52F0)),
                     g_diagFramesPresented.load(std::memory_order_relaxed),
                     g_diagDraws.load(std::memory_order_relaxed));
         }
@@ -357,13 +358,20 @@ static void LibertyWatchdogLoop()
                 r3 = ctx->r3.u32;
                 have_ctx = true;
             }
+            uint32_t r29 = 0;
+            if (have_ctx) r29 = ts->context()->r29.u32;
             fprintf(stderr,
-                    "  tid=%u name='%s' run=%d guest=%d main=%d entry=0x%08X lr=0x%08X%08X r1=0x%08X r3=0x%08X ctx=%d\n",
+                    "  tid=%u name='%s' run=%d guest=%d main=%d entry=0x%08X lr=0x%08X%08X r1=0x%08X r3=0x%08X r29=0x%08X evt=0x%08X ctx=%d\n",
                     t->thread_id(), t->name().c_str(),
                     (int)t->is_running(), (int)t->is_guest_thread(),
                     (int)t->main_thread(),
                     static_cast<uint32_t>(t->creation_params()->start_address),
-                    lr_hi, lr_lo, r1, r3, (int)have_ctx);
+                    lr_hi, lr_lo, r1, r3, r29,
+                    (have_ctx && r29 >= 0x10000u && r29 < 0x100000000ull)
+                        ? __builtin_bswap32(*reinterpret_cast<uint32_t*>(
+                              g_memory.base + (r29 & 0xFFFFFFF0u)))
+                        : 0u,
+                    (int)have_ctx);
             // Stack-walk disabled: it served its purpose (identifying
             // sub_82847D48/buddy-allocator as the suspected hang site) but
             // faults when it reaches unmapped pages near the top of a guest

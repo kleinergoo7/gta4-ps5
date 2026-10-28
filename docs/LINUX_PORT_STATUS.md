@@ -60,6 +60,21 @@ running a frame loop.
 Remaining lead: find the owner/producer of semaphore `0xF8001080` (needs
 object-table inspection late in boot, or hooking the semaphore release path).
 
+**Producer identified and blocked.** Thread `tid=20`, entry `0x821909D0`, never
+returns from that function: it parks at `0x82190A28` inside
+`KeWaitForSingleObject`. The waited object is `0x831D52F0`; its dispatcher
+state is `0x01000000` (type byte 1, signal-state bit **0**) and it never
+changes for the whole run. So the event is never signalled after the first
+frames — the producer parks, which starves the render thread, which parks on
+its own semaphore.
+
+Semaphore releases do happen (`[RelSem]`, all at `LR=0x82849890`, delta 1) but
+only during the init window and to other handles (`F800003C`, `F8000CC8`,
+`F8000CD8`, `F8000878`, `F8000040`, …), never `F8001080` afterwards.
+
+Next lead: find who signals event `0x831D52F0` — i.e. which guest code path was
+expected to call `KeSetEvent` on it after the frontend finishes loading.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
