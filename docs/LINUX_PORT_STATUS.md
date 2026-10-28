@@ -270,6 +270,20 @@ the state it starts with (`r3 = 0`) never reaches 7 in this run.
 Next question, narrowed again: **what advances `sub_82142230`'s state machine to
 7** — and does it need the initial load, or something else entirely?
 
+**Answer to "did it return": it never returns.** With
+`--experiment-clear-ready` (off by default) the dispatcher is entered and then
+blocks: `sub_82142230` logs entry and no exit. The main thread sits in
+`sub_82A1A450` waiting on handle **`0xF8000044`**, which the object table
+reports as a **Semaphore (type 8)**.
+
+That semaphore is released exactly **once**, during init, from
+`LR=0x82849890` (`[RelSem] ... handle=0xf8000044 delta=1`). By the time the
+dispatcher reaches its wait — which only happens because the experiment let the
+boot loop exit — the signal is already spent, so it blocks forever.
+
+That is a release/consume ordering problem, and it matches the whole picture:
+on hardware the dispatcher is already waiting when the loader signals.
+
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
 memory `watch` aborts the process (SIGABRT), and `break` stops the guest and
