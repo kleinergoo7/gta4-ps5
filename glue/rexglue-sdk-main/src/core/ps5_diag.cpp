@@ -11,7 +11,12 @@
 
 #include <fcntl.h>
 #include <pthread.h>
+#if defined(__linux__)
+#include <sched.h>        // CPU_SET for the scePthreadSetaffinity emulation
+#include <sys/syscall.h>  // gettid(); glibc has no pthread_np.h / pthread_getthreadid_np
+#else
 #include <pthread_np.h>
+#endif
 #include <signal.h>
 #include <unistd.h>
 
@@ -19,6 +24,12 @@
 #include <rex/logging.h>
 
 namespace rex::ps5diag {
+// pthread_getthreadid_np exists on BSD/macOS/PS5; Linux uses gettid().
+#if defined(__linux__)
+inline uint64_t ThisThreadId() { return uint64_t(::syscall(SYS_gettid)); }
+#else
+inline uint64_t ThisThreadId() { return uint64_t(pthread_getthreadid_np()); }
+#endif
 std::atomic<uint64_t> counters[kCount];
 WaitSlot wait_slots[kWaitSlots];
 uintptr_t guest_arena_lo = 0, guest_arena_hi = 0;
@@ -283,7 +294,7 @@ void UnhandledHostFault(uintptr_t rip, uintptr_t address, uintptr_t rsp) {
   const uintptr_t anchor = Anchor();
   static RawLine line;
   line.Add("\n[ps5 crash] thread ");
-  line.Dec(uint64_t(my_entry ? my_entry->tid : pthread_getthreadid_np()));
+  line.Dec(uint64_t(my_entry ? my_entry->tid : ThisThreadId()));
   line.Add(" (");
   line.Add(my_entry ? my_entry->what : "unregistered");
   line.Add(") faulted at ");
@@ -437,7 +448,7 @@ void RegisterThread(const char* what) {
   if (i >= kThreads) return;
   ThreadEntry& e = threads[i];
   e.pthread = pthread_self();
-  e.tid = pthread_getthreadid_np();
+  e.tid = ThisThreadId();
   int marker = 0;
   e.stack_top = reinterpret_cast<uintptr_t>(&marker) + 256;  // (a little above: the caller's frame)
   std::strncpy(e.what, what ? what : "", sizeof(e.what) - 1);
@@ -460,6 +471,19 @@ void UnregisterThread() {
 }
 
 extern "C" int32_t scePthreadSetaffinity(pthread_t thread, uint64_t mask);
+#if defined(__linux__)
+// PS5 libc provides this; on Linux emulate with pthread_setaffinity_np.
+// Only the low 64 CPUs are addressable through the 64-bit mask, matching
+// the PS5 call's semantics.
+extern "C" int32_t scePthreadSetaffinity(pthread_t thread, uint64_t mask) {
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  for (int cpu = 0; cpu < 64; ++cpu) {
+    if (mask & (uint64_t(1) << cpu)) CPU_SET(cpu, &set);
+  }
+  return int32_t(pthread_setaffinity_np(thread, sizeof(set), &set));
+}
+#endif
 void KeepOtherThreadsOn(uint64_t mask, uintptr_t title_thread, uintptr_t main_thread,
                         uint64_t main_mask) {
   int count = next_thread.load();

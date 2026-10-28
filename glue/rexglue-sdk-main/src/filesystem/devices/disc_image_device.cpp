@@ -18,9 +18,12 @@
 #include <vector>
 
 #include <rex/platform.h>
-#if REX_PLATFORM_PS5
+// Unconditional: the header holds a unique_ptr<direct::Reader> whose default
+// destructor must see the complete type on every platform (GCC 16's
+// default_delete static_asserts on incomplete types). direct_io.h itself is
+// portable (POSIX; O_DIRECT only on PS5, plain open elsewhere); all *uses*
+// of reader_ stay behind REX_PLATFORM_PS5 below.
 #include <rex/filesystem/direct_io.h>
-#endif
 
 #include <rex/literals.h>
 #include <rex/logging.h>

@@ -145,6 +145,8 @@ ImVec2 LabelOrigin(ImFont* font, float size, const char* label, ImVec2 center) {
   const ImVec2 text = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label);
   float y = center.y - text.y * 0.5f;
   float x = center.x - text.x * 0.5f;
+#if IMGUI_VERSION_NUM >= 19200
+  // Per-size baked raster (imgui 1.92+).
   if (ImFontBaked* baked = font->GetFontBaked(size)) {
     if (const ImFontGlyph* glyph = baked->FindGlyphNoFallback(ImWchar(label[0]))) {
       const float scale = baked->Size > 0.0f ? size / baked->Size : 1.0f;
@@ -152,6 +154,14 @@ ImVec2 LabelOrigin(ImFont* font, float size, const char* label, ImVec2 center) {
       if (label[1] == 0) x = center.x - (glyph->X0 + glyph->X1) * 0.5f * scale;
     }
   }
+#else
+  // imgui 1.91: single raster scaled to the requested size.
+  if (const ImFontGlyph* glyph = font->FindGlyphNoFallback(ImWchar(label[0]))) {
+    const float scale = font->FontSize > 0.0f ? size / font->FontSize : 1.0f;
+    y = center.y - (glyph->Y0 + glyph->Y1) * 0.5f * scale;
+    if (label[1] == 0) x = center.x - (glyph->X0 + glyph->X1) * 0.5f * scale;
+  }
+#endif
   return ImVec2(x, y);
 }
 

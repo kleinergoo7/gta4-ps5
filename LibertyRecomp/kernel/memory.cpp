@@ -72,8 +72,8 @@ void Memory::InitializeFromRexGlue()
     // Shared init: manual stubs, vtable pre-population
     PopulateFunctionTableAndVtables();
 
-    DIAG_EMIT("[DIAG] Post-Populate GetFunction(0x82A692C8)=%p\n",
-              (void*)rex_memory_->GetFunction(0x82A692C8));
+    // NOTE: rex::memory::Memory no longer exposes GetFunction (graine SDK);
+    // SetFunction above reports failures inline, so no post check needed.
 }
 
 void Memory::PopulateFunctionTableAndVtables()

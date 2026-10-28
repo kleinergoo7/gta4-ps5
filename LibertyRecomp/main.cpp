@@ -15,6 +15,11 @@
 #ifdef __ANDROID__
 #include <dlfcn.h>
 #endif
+#ifdef __linux__
+#include <dlfcn.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#endif
 #if REX_PLATFORM_CONSOLE
 #include <unistd.h>
 #endif
@@ -526,13 +531,13 @@ int main(int argc, char *argv[])
                        "general application logs independently of diagnostic artifacts)");
 
         try { cli.parse(argc, argv); }
-        catch (const CLI::ParseError &e) { return cli.exit(e); }
+        catch (const CLI::ParseError &e) { return static_cast<int>(cli.exit(e)); }
 
         std::string diagnosticsError;
         if (!rex::diagnostics::Configure(diagnostics, diagnosticsCategories,
                                          &diagnosticsError)) {
             std::fprintf(stderr, "Liberty Recompiled: %s\n", diagnosticsError.c_str());
-            return CLI::ExitCodes::ValidationError;
+            return static_cast<int>(CLI::ExitCodes::ValidationError);
         }
 
         App::s_isSkipLogos = App::s_isSkipLogos || skipLogos;
@@ -797,11 +802,7 @@ int main(int argc, char *argv[])
             Config::LANBroadcastPort.Value, 1, std::numeric_limits<uint16_t>::max()));
 
         uint32_t rt_status = s_rexRuntime->Setup(
-            static_cast<uint32_t>(PPC_CODE_BASE),
-            static_cast<uint32_t>(PPC_CODE_SIZE),
-            static_cast<uint32_t>(PPC_IMAGE_BASE),
-            static_cast<uint32_t>(PPC_IMAGE_SIZE),
-            PPCFuncMappings,
+            PPCImageConfig,
             std::move(rexConfig));
         DIAG_EMIT("[Main] Setup() returned 0x%08X\n", rt_status);
 
@@ -826,7 +827,7 @@ int main(int argc, char *argv[])
         // this for ReXApp-derived apps, but Liberty owns its own main() so we
         // have to call it ourselves. Without this rexcrt_RtlAllocateHeap fails
         // with "kernel memory is null" on every guest alloc → SIGBUS.
-        if (!rex::kernel::crt::InitHeap(FLAGS_rexcrt_heap_size_mb, s_rexRuntime->memory())) {
+        if (!rex::kernel::crt::InitHeap(REXCVAR_GET(rexcrt_heap_size_mb), s_rexRuntime->memory())) {
             fprintf(stderr, "[Main] FATAL: rexcrt heap init failed\n");
             std::_Exit(1);
         }
@@ -836,7 +837,7 @@ int main(int argc, char *argv[])
             auto* p = s_rexRuntime->function_dispatcher();
             PPCFunc* xsf = p->GetFunction(0x82A11290);
             fprintf(stderr, "[DIAG] After Setup(): GetFunction(0x82A11290)=%p  HasFT=%d\n",
-                    (void*)xsf, (int)p->HasFunctionTable());
+                    (void*)xsf, (int)p->HasAnyFunctionTable());
             int total = 0, nullHost = 0;
             bool foundEntry = false;
             for (int i = 0; PPCFuncMappings[i].guest != 0; ++i) {
@@ -1226,7 +1227,7 @@ int main(int argc, char *argv[])
         auto* p = rt->function_dispatcher();
         PPCFunc* xsf = p->GetFunction(0x82A11290);
         fprintf(stderr, "[DIAG] Before LaunchModule(): GetFunction(0x82A11290)=%p  HasFT=%d  instance=%p\n",
-                (void*)xsf, (int)p->HasFunctionTable(), (void*)rt);
+                (void*)xsf, (int)p->HasAnyFunctionTable(), (void*)rt);
         fflush(stderr);
     }
     auto main_xthread = rt->LaunchModule();

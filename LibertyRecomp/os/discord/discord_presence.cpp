@@ -17,7 +17,8 @@
 #if !REX_PLATFORM_CONSOLE     && \
     !defined(LIBERTY_RECOMP_PS5)  && \
     !REX_PLATFORM_ANDROID     && \
-    !REX_PLATFORM_IOS
+    !REX_PLATFORM_IOS         && \
+    defined(LIBERTY_RECOMP_DISCORD_RPC)
 
 #include <discord_rpc.h>
 #include <cstring>

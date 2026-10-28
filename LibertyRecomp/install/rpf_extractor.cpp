@@ -18,6 +18,8 @@
 #elif defined(__ANDROID__)
 // Android: RPF decryption not needed — game data is pre-extracted.
 // Provide a stub that always fails so the code compiles.
+#elif defined(__linux__)
+#include <openssl/evp.h>
 #else
 #include <CommonCrypto/CommonCrypto.h>
 #endif
@@ -126,6 +128,29 @@ namespace RpfExtractor
         // Android: RPF decryption not supported — game data is pre-extracted.
         (void)data; (void)key; (void)dataLen;
         return false;
+#elif defined(__linux__)
+        // OpenSSL EVP - decrypt 16 times like SparkIV (raw ECB, no padding)
+        for (int round = 0; round < 16; round++)
+        {
+            EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+            if (!ctx)
+            {
+                return false;
+            }
+            int outLen = 0;
+            bool roundOk =
+                EVP_DecryptInit_ex(ctx, EVP_aes_256_ecb(), nullptr, key.data(), nullptr) == 1 &&
+                EVP_CIPHER_CTX_set_padding(ctx, 0) == 1 &&
+                EVP_DecryptUpdate(ctx, data.data(), &outLen, data.data(),
+                                  static_cast<int>(dataLen)) == 1 &&
+                static_cast<size_t>(outLen) == dataLen;
+            EVP_CIPHER_CTX_free(ctx);
+            if (!roundOk)
+            {
+                return false;
+            }
+        }
+        return true;
 #else
         // macOS/iOS CommonCrypto - decrypt 16 times like SparkIV
         for (int round = 0; round < 16; round++)

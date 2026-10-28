@@ -35,9 +35,11 @@ PPCFunc* gBikeProcessControlInputs = nullptr;
 class ScopedScaledSteeringBias
 {
 public:
-    ScopedScaledSteeringBias(std::uint32_t vehicle, float timeStepSeconds) noexcept
+    ScopedScaledSteeringBias(std::uint32_t vehicle, float timeStepSeconds,
+                             std::uint8_t* base) noexcept
         : address_(vehicle + kSteeringBiasOffset),
-          originalBits_(PPC_LOAD_U32(address_))
+          originalBits_(PPC_LOAD_U32(address_)),
+          base_(base)
     {
         const float originalBias = std::bit_cast<float>(originalBits_);
         PPC_STORE_U32(address_, std::bit_cast<std::uint32_t>(
@@ -46,6 +48,7 @@ public:
 
     ~ScopedScaledSteeringBias()
     {
+        uint8_t* base = base_;
         PPC_STORE_U32(address_, originalBits_);
     }
 
@@ -55,6 +58,7 @@ public:
 private:
     std::uint32_t address_;
     std::uint32_t originalBits_;
+    std::uint8_t* base_;
 };
 
 void InvokeWithScaledSteeringBias(PPCContext& ctx, std::uint8_t* base,
@@ -62,7 +66,7 @@ void InvokeWithScaledSteeringBias(PPCContext& ctx, std::uint8_t* base,
 {
     const float timeStepSeconds = std::bit_cast<float>(
         PPC_LOAD_U32(kGameplayTimeStepAddress));
-    const ScopedScaledSteeringBias scaledBias(ctx.r3.u32, timeStepSeconds);
+    const ScopedScaledSteeringBias scaledBias(ctx.r3.u32, timeStepSeconds, base);
     original(ctx, base);
 }
 

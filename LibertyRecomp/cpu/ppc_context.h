@@ -10,6 +10,51 @@
   #define PPC_CODE_BASE  REX_CODE_BASE
   #define PPC_CODE_SIZE  REX_CODE_SIZE
 #endif
+#ifndef PPC_MEMORY_SIZE
+  #define PPC_MEMORY_SIZE REX_MEMORY_SIZE
+#endif
+#ifndef PPC_LOOKUP_FUNC
+  #define PPC_LOOKUP_FUNC REX_LOOKUP_FUNC
+#endif
+// Remaining PPC_* helpers map onto their REX_* replacements (Linux builds
+// are unaffected: REX_PHYS_HOST_OFFSET is 0 here, and the indirect-call
+// macro only gains a bounds check plus profiler hook).
+#ifndef PPC_FUNC
+  #define PPC_FUNC REX_FUNC
+#endif
+#ifndef PPC_FUNC_IMPL
+  #define PPC_FUNC_IMPL(x) REX_EXTERN(x)
+#endif
+#ifndef PPC_FUNC_PROLOGUE
+  #define PPC_FUNC_PROLOGUE REX_FUNC_PROLOGUE
+#endif
+#ifndef PPC_CALL_INDIRECT_FUNC
+  #define PPC_CALL_INDIRECT_FUNC REX_CALL_INDIRECT_FUNC
+#endif
+#ifndef PPC_LOAD_U8
+  #define PPC_LOAD_U8 REX_LOAD_U8
+#endif
+#ifndef PPC_LOAD_U16
+  #define PPC_LOAD_U16 REX_LOAD_U16
+#endif
+#ifndef PPC_LOAD_U32
+  #define PPC_LOAD_U32 REX_LOAD_U32
+#endif
+#ifndef PPC_LOAD_U64
+  #define PPC_LOAD_U64 REX_LOAD_U64
+#endif
+#ifndef PPC_STORE_U8
+  #define PPC_STORE_U8 REX_STORE_U8
+#endif
+#ifndef PPC_STORE_U16
+  #define PPC_STORE_U16 REX_STORE_U16
+#endif
+#ifndef PPC_STORE_U32
+  #define PPC_STORE_U32 REX_STORE_U32
+#endif
+#ifndef PPC_STORE_U64
+  #define PPC_STORE_U64 REX_STORE_U64
+#endif
 #include <rex/ppc/context.h>
 #include <rex/ppc/function.h>
 

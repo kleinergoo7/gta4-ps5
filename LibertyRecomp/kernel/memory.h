@@ -6,6 +6,7 @@
 #endif
 
 #include <memory>
+#include <cpu/ppc_context.h>
 namespace rex::memory { class Memory; }
 
 struct Memory

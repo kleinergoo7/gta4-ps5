@@ -341,6 +341,7 @@ public:
   std::vector<SessionRecord> Search(uint32_t title_id, uint32_t media_id,
                                     uint32_t title_version,
                                     uint32_t protocol_version,
+                                    uint32_t procedure_index,
                                     std::span<const SessionContext> contexts,
                                     std::span<const SessionProperty> properties,
                                     uint32_t maximum_results) override;
@@ -348,7 +349,7 @@ public:
   bool Modify(const SessionRecord &session) override;
   bool Join(uint64_t session_id, const SessionMember &member) override;
   bool Leave(uint64_t session_id, uint64_t xuid) override;
-  bool Migrate(uint64_t session_id, const SessionRecord &replacement) override;
+  std::optional<SessionRecord> Migrate(uint64_t session_id, const SessionRecord &replacement) override;
   bool Delete(uint64_t session_id) override;
 
   void RegisterRoute(uint32_t virtual_ipv4,
@@ -968,7 +969,8 @@ bool CommunityMultiplayerBackend::Heartbeat(const SessionRecord &session) {
 
 std::vector<SessionRecord> CommunityMultiplayerBackend::Search(
     uint32_t title_id, uint32_t media_id, uint32_t title_version,
-    uint32_t protocol_version, std::span<const SessionContext> contexts,
+    uint32_t protocol_version, uint32_t procedure_index,
+    std::span<const SessionContext> contexts,
     std::span<const SessionProperty> properties, uint32_t maximum_results) {
   json encoded_contexts = json::array();
   for (const auto &context : contexts) {
@@ -982,6 +984,7 @@ std::vector<SessionRecord> CommunityMultiplayerBackend::Search(
                   {"media_id", media_id},
                   {"title_version", title_version},
                   {"protocol_version", protocol_version},
+                  {"procedure_index", procedure_index},
                   {"maximum_results", maximum_results},
                   {"contexts", std::move(encoded_contexts)},
                   {"properties", std::move(encoded_properties)}};
@@ -1064,7 +1067,7 @@ bool CommunityMultiplayerBackend::Leave(uint64_t session_id, uint64_t xuid) {
                         &request, &updated);
 }
 
-bool CommunityMultiplayerBackend::Migrate(uint64_t session_id,
+std::optional<SessionRecord> CommunityMultiplayerBackend::Migrate(uint64_t session_id,
                                           const SessionRecord &replacement) {
   SessionRecord published = replacement;
   if (replacement.host_xuid == identity_.xuid) {
@@ -1076,14 +1079,14 @@ bool CommunityMultiplayerBackend::Migrate(uint64_t session_id,
   if (!RequestSession("POST",
                       fmt::format("/v1/sessions/{:016x}/migrate", session_id),
                       &request, &updated)) {
-    return false;
+    return std::nullopt;
   }
   std::lock_guard lock(session_mutex_);
   hosted_sessions_.erase(session_id);
   if (updated.host_xuid == identity_.xuid) {
-    hosted_sessions_[updated.session_id] = std::move(updated);
+    hosted_sessions_[updated.session_id] = updated;
   }
-  return true;
+  return updated;
 }
 
 bool CommunityMultiplayerBackend::Delete(uint64_t session_id) {
