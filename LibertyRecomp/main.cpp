@@ -245,6 +245,233 @@ static bool RexFallbackCrashHandler(rex::arch::Exception* ex, void* /*data*/) {
     return false;
 }
 
+// Raw SIGSEGV entry for ArenaGuardCommitHandler (see below). The rex
+// exception chain is preempted during Setup (guest::initialize installs its
+// SEH handler over the chain entry and nothing restores it), so chain-based
+// handlers never fire for these faults. This installs directly after Setup
+// and chains to whatever was installed before us on decline.
+static struct sigaction g_arenaPrevSegv;
+
+static bool ArenaGuardCommitFault(uint64_t fa);
+
+static void ArenaGuardSegvEntry(int sig, siginfo_t* info, void* uctx) {
+    bool handled = false;
+    if (sig == SIGSEGV && info) {
+        handled = ArenaGuardCommitFault((uint64_t)info->si_addr);
+    }
+    if (!handled) {
+        // Decline: forward to the previously installed handler (SEH chain,
+        // default disposition, whatever was there). SA_RESETHAND is not set
+        // so we stay installed.
+        if (g_arenaPrevSegv.sa_sigaction) {
+            g_arenaPrevSegv.sa_sigaction(sig, info, uctx);
+            return;
+        }
+        // No previous handler: restore default and re-raise to die loudly.
+        struct sigaction dfl;
+        memset(&dfl, 0, sizeof(dfl));
+        dfl.sa_handler = SIG_DFL;
+        sigaction(sig, &dfl, nullptr);
+        raise(sig);
+        _exit(139);
+    }
+}
+
+// Commit-on-demand for guard pages inside the guest arena.
+//
+// Why this exists: during init texture streaming the game derives some upload
+// destinations from stack slots its own call chain never stores to (verified
+// for sub_828D9AC8's [r1+196..224]: neither it nor its caller 828DAAB8 writes
+// them). On real hardware (dense RAM) those stale dests land mapped and the
+// copies succeed silently; our sparse arena (PROT_NONE guard stripes for
+// uncommitted physical pages) turns the same accesses fatal. Committing the
+// page mirrors hardware: the access succeeds. Nothing is hidden: every commit
+// is logged with its guest address, capped, and anything outside the arena,
+// in the null page, or already mapped still crashes as before.
+//
+// Signal-safe: only open/read/close/mprotect/write plus manual parsing here —
+// no malloc, stdio, or STL. Installed after Memory::Initialize so MMIO-owned
+// ranges keep their emulation (MMIOHandler runs first and claims them); the
+// fallback crash logger is moved after us so it only logs true crashes.
+// Returns true when fa was committed (caller resumes), false otherwise.
+// Signal-safe: only open/read/close/mprotect/write plus manual parsing.
+static bool ArenaGuardCommitFault(uint64_t fa_in) {
+    uint8_t* base = g_memory.base;
+    if (!base) {
+        return false;
+    }
+    const uintptr_t b = reinterpret_cast<uintptr_t>(base);
+    const uintptr_t fa = static_cast<uintptr_t>(fa_in);
+    // Keep the null page fatal; stay strictly inside the 4GB arena.
+    if (fa < b + 0x10000u || fa >= b + 0x100000000ULL) {
+        return false;
+    }
+    const uintptr_t page = fa & ~uintptr_t(0xFFFu);
+    // The link map here is ~85KB (Vulkan layers etc.); read it whole.
+    const size_t kCap = 262144;
+    char* buf = (char*)::mmap(nullptr, kCap, PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    size_t used = 0;
+    if (buf != MAP_FAILED) {
+        int fd = ::open("/proc/self/maps", O_RDONLY);
+        if (fd >= 0) {
+            for (;;) {
+                if (used >= kCap) {
+                    break;
+                }
+                ssize_t r = ::read(fd, buf + used, kCap - used);
+                if (r <= 0) {
+                    break;
+                }
+                used += static_cast<size_t>(r);
+            }
+            ::close(fd);
+        }
+    }
+        // Parse "start-end perms ..." lines; stop at buffer end (truncated
+        // maps simply miss, which safely declines to handle).
+        bool is_noaccess = false;
+        size_t i = 0;
+        if (buf == MAP_FAILED) {
+            return false;
+        }
+        while (i < used) {
+            // Parse start address (hex).
+            uintptr_t start = 0;
+            bool have_start = false;
+            while (i < used && buf[i] != '-' && buf[i] != '\n') {
+                char c = buf[i++];
+                unsigned v;
+                if (c >= '0' && c <= '9') v = (unsigned)(c - '0');
+                else if (c >= 'a' && c <= 'f') v = (unsigned)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') v = (unsigned)(c - 'A' + 10);
+                else break;
+                start = (start << 4) | v;
+                have_start = true;
+            }
+            if (i >= used || buf[i] != '-') {
+                while (i < used && buf[i] != '\n') ++i;
+                if (i < used) ++i;
+                continue;
+            }
+            ++i;  // '-'
+            uintptr_t end = 0;
+            bool have_end = false;
+            while (i < used && buf[i] != ' ' && buf[i] != '\n') {
+                char c = buf[i++];
+                unsigned v;
+                if (c >= '0' && c <= '9') v = (unsigned)(c - '0');
+                else if (c >= 'a' && c <= 'f') v = (unsigned)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') v = (unsigned)(c - 'A' + 10);
+                else break;
+                end = (end << 4) | v;
+                have_end = true;
+            }
+            if (i >= used || buf[i] != ' ') {
+                while (i < used && buf[i] != '\n') ++i;
+                if (i < used) ++i;
+                continue;
+            }
+            ++i;  // ' '
+            if (i + 4 > used) {
+                break;
+            }
+            if (have_start && have_end && start <= page && page < end &&
+                buf[i] == '-' && buf[i + 1] == '-' && buf[i + 2] == '-') {
+                is_noaccess = true;
+                break;
+            }
+            while (i < used && buf[i] != '\n') ++i;
+            if (i < used) ++i;
+        }
+    if (!is_noaccess) {
+        ::munmap(buf, kCap);
+        // TEMP-DIAG: log declined in-arena faults (first 8) to classify
+        // what slips through commit-on-demand. Remove after.
+        static int declines = 0;
+        int d = __atomic_add_fetch(&declines, 1, __ATOMIC_RELAXED);
+        if (d <= 8) {
+            char msg[80];
+            char* p = msg;
+            const char* pre = "[arena-decline] guest=0x";
+            while (*pre) *p++ = *pre++;
+            uint32_t ga = static_cast<uint32_t>(fa - b);
+            for (int shift = 28; shift >= 0; shift -= 4) {
+                unsigned dg = (ga >> shift) & 0xF;
+                *p++ = (char)(dg < 10 ? '0' + dg : 'a' + dg - 10);
+            }
+            *p++ = '\n';
+            size_t off = 0;
+            size_t len = (size_t)(p - msg);
+            while (off < len) {
+                ssize_t w = ::write(STDERR_FILENO, msg + off, len - off);
+                if (w <= 0) break;
+                off += (size_t)w;
+            }
+        }
+        return false;
+    }
+
+    // Budget: never commit more than 256MB total across the run; beyond that
+    // something is genuinely wrong, so crash loudly instead of masking it.
+    // Same-page guard: a fault on a page we just committed means the commit
+    // didn't take (or access is blocked another way); bail instead of looping.
+    static int commits = 0;
+    static uintptr_t last_page = 0;
+    static int last_page_hits = 0;
+    if (page == last_page) {
+        if (++last_page_hits > 3) {
+            ::munmap(buf, kCap);
+            return false;
+        }
+    } else {
+        last_page = page;
+        last_page_hits = 0;
+    }
+    ::munmap(buf, kCap);
+    int n = __atomic_add_fetch(&commits, 1, __ATOMIC_RELAXED);
+    if (n > 65536) {
+        return false;
+    }
+    if (::mprotect(reinterpret_cast<void*>(page), 4096, PROT_READ | PROT_WRITE) != 0) {
+        return false;
+    }
+    // Minimal signal-safe note (first 16, then every 1024th): guest address
+    // and running total. Everything else stays silent by design.
+    if (n <= 16 || (n % 1024) == 0) {
+        char msg[96];
+        char* p = msg;
+        const char* pre = "[arena-commit] guest=0x";
+        while (*pre) *p++ = *pre++;
+        uint32_t ga = static_cast<uint32_t>(fa - b);
+        for (int shift = 28; shift >= 0; shift -= 4) {
+            unsigned d = (ga >> shift) & 0xF;
+            *p++ = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+        }
+        const char* mid = " (#";
+        while (*mid) *p++ = *mid++;
+        // Decimal count (n > 0 here).
+        char num[12];
+        int nd = 0;
+        int t = n;
+        do {
+            num[nd++] = (char)('0' + (t % 10));
+            t /= 10;
+        } while (t > 0);
+        while (nd > 0) *p++ = num[--nd];
+        *p++ = ')';
+        *p++ = '\n';
+        size_t off = 0;
+        size_t len = (size_t)(p - msg);
+        while (off < len) {
+            ssize_t w = ::write(STDERR_FILENO, msg + off, len - off);
+            if (w <= 0) break;
+            off += (size_t)w;
+        }
+    }
+    return true;
+}
+
 // Phase 2a: Install the fallback crash handler early (before memory init).
 // This sets up RexGlue's signal handlers (SIGILL, SIGSEGV, SIGBUS) via
 // ExceptionHandler::Install() so any faults during startup are caught.
@@ -861,6 +1088,21 @@ int main(int argc, char *argv[])
         // Get memory base from the Runtime's internally-managed Memory object.
         g_memory.base = s_rexRuntime->virtual_membase();
         DIAG_EMIT("[Main] RexGlue memory: base=%p\n", (void*)g_memory.base);
+        // Commit-on-demand for arena guard pages (see ArenaGuardCommitFault).
+        // Installed as a raw chained sigaction (not via the rex chain: that
+        // chain is preempted during Setup by guest::initialize's SEH handler
+        // and never fires for these faults). Chains to whatever was installed
+        // before us on decline, so SEH/MMIO/default behavior is preserved.
+        {
+            struct sigaction sa;
+            memset(&sa, 0, sizeof(sa));
+            sa.sa_sigaction = ArenaGuardSegvEntry;
+            sa.sa_flags = SA_SIGINFO;
+            sigemptyset(&sa.sa_mask);
+            if (sigaction(SIGSEGV, &sa, &g_arenaPrevSegv) != 0) {
+                fprintf(stderr, "[Main] WARNING: ArenaGuard sigaction install failed\n");
+            }
+        }
         // Set base pointer for rexcrt memset watchpoint diagnostic
         // Populate vtables and install function stubs into guest memory.
         g_memory.PopulateFunctionTableAndVtables();

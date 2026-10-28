@@ -9471,6 +9471,17 @@ PPC_FUNC_HOOK(sub_828BEC78)
                      s_count, std::max(1u, width), std::max(1u, height),
                      fmtCode, type, msaa, outPtr);
 
+    // Stale-stack defense: init code sometimes reaches here with uninitialized
+    // dimension registers (observed: 2190205016x1). On hardware the stale
+    // values happened to be small; a 2 GB surface can never succeed, so fail
+    // fast and let the caller fall back instead of aborting in VMA.
+    if (width == 0 || height == 0 || width > 16384u || height > 16384u) {
+        LOGF_WARNING("[CreateRAGERT] #{} rejecting insane {}x{} (uninit args?)",
+                     s_count, width, height);
+        ctx.r3.s32 = -1;
+        return;
+    }
+
     if (type == 1 || type == 3) {
         // Render-target texture (2D or cube) — create via existing CreateTexture path
         const ResourceType resType = ResourceType::Texture;
