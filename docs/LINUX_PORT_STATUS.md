@@ -552,6 +552,32 @@ called from the same init) is the next unread code on this path.
 Note: an earlier probe read the table from the wrong base (`0x831D4DD4`,
 off by `0x10000`). Correct base is `0x831E4DD4` (`lis -31970 + 19924`).
 
+## Second load table is empty by construction (measured)
+
+Watchpoint on the global `tbl = [0x831E4DD4]` shows exactly one write per run,
+from `sub_821411D8` (via `sub_82140000` at boot):
+
+```
+tbl = second_tbl (376 B block, e.g. 0xD9137880)
+*(second_tbl + 328) = count = 0
+```
+
+`sub_821411D8` allocates two blocks: 1656 B (`first_tbl`, e.g. `0xD91370B0`,
+stored to global `0x831E4DD0`) and 376 B (`second_tbl`, stored to global
+`0x831E4DD4`). It stores `r30 = 0` as the count at `second_tbl + 328`.
+The filler it calls, `sub_82140748`, receives `first_tbl`, not `second_tbl`,
+so it cannot fill the count the record writer reads.
+
+A corpus search finds exactly one `sth ...328(...)` in all generated code:
+the zeroing store in `sub_821411D8` itself. No CPU code ever increments the
+second-table count. Either entries are added via computed addresses the
+literal search misses, or the appender lives downstream of the boot wait.
+
+The record writer therefore reads an empty table at boot by construction.
+This is the bottom of the record-writer branch: the wall is not the writer,
+the flag, or the table pointer — it is the missing table entries, whose
+producer has no reachable call site while `ready` stays 1.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

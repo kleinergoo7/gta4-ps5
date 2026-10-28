@@ -10434,6 +10434,9 @@ PPC_FUNC_HOOK(sub_821449B8)
 
 LOG_STAGE_PROBE(sub_8223DDA8)
 LOG_STAGE_PROBE(sub_8223DEE8)
+// Table filler for the load-record path: sub_821411D8 allocates tbl at
+// 0x831E4DD4 with count 0, then calls this to fill it. Log count after.
+LOG_STAGE_PROBE(sub_82140748)
 
 // Case-3 entry, reached only when the dispatcher sits in stage 3.
 LOG_STAGE_PROBE(sub_8223CAD8)
