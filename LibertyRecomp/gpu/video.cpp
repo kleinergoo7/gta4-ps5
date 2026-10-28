@@ -10116,18 +10116,48 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
-// sub_821909D0 — producer thread entry (calls KeReleaseSemaphore); probe to
-// see whether it runs, in which order, and when it stops.
+// sub_8218F4B8 / sub_82193290 — task-pool entry points (both take
+// &pool[21484]). Count calls to tell "nothing submits" from "submits fail".
+PPC_FUNC_IMPL(__imp__sub_8218F4B8);
+PPC_FUNC_HOOK(sub_8218F4B8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 200) == 0)
+        LOGF_WARNING("[POOL] sub_8218F4B8 call#{} lr={:#x}", n, static_cast<uint32_t>(ctx.lr));
+    __imp__sub_8218F4B8(ctx, base);
+}
+
+PPC_FUNC_IMPL(__imp__sub_82193290);
+PPC_FUNC_HOOK(sub_82193290)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 200) == 0)
+        LOGF_WARNING("[POOL] sub_82193290 call#{} lr={:#x}", n, static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82193290(ctx, base);
+}
+
+// sub_821909D0 — producer thread entry. It resolves its job list as
+// *(r30+21484) and inspects counts at +300/+304. Log that state so we can see
+// whether jobs are ever queued.
 PPC_FUNC_IMPL(__imp__sub_821909D0);
 PPC_FUNC_HOOK(sub_821909D0)
 {
-    static int s_calls = 0;
-    ++s_calls;
-    if (s_calls <= 6)
-        LOGF_WARNING("[PRODUCER] sub_821909D0 enter#{}", s_calls);
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 6)
+    {
+        const uint32_t list = PPC_LOAD_U32(0x831D53EC);
+        uint32_t count = 0, cap = 0;
+        if (list)
+        {
+            count = PPC_LOAD_U32(list + 300);
+            cap = PPC_LOAD_U32(list + 304);
+        }
+        LOGF_WARNING("[PRODUCER] call#{} list=0x{:#x} count={} cap={}", n, list, count, cap);
+    }
     __imp__sub_821909D0(ctx, base);
-    if (s_calls <= 6)
-        LOGF_WARNING("[PRODUCER] sub_821909D0 exit#{} ret={}", s_calls, ctx.r3.u32);
 }
 
 // sub_821411D8 — loop probe: log entry and returned value.

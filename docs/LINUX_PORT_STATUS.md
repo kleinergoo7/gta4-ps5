@@ -139,6 +139,23 @@ loads content**, which is consistent with the empty work queue.**
 Next question: what submits streaming work — the task graph whose queue the
 producer thread drains — and why it is never fed.
 
+**Task pool located.** The global at `0x831D53EC` holds the pool object; it is
+the same object as the `0x820BE4C0` vtable (mirror address `0xD998C42C`). Live
+counters `+300`/`+304` read **0 / 0** for the whole run: nothing is ever
+enqueued. Probe results:
+
+- pool creator `sub_8218F4B8 -> sub_821901D8` runs **once** at boot
+  (caller `LR=0x82A24A30`), so the pool and its worker exist.
+- pool entry `sub_82193290` is **never** called.
+- worker wake/registration `sub_821904B8` is **never** called.
+- waking the worker manually (`xeKeSetEvent 0x831D52F0`) moves it past the wait
+  but it finds an empty queue.
+
+So the pool is created, the worker exists, and the game never submits or wakes
+it. The remaining work is to find GTA IV's task-submit API (one of the 88
+functions referencing `+21484`) and see why the streaming system never calls
+it — a task-graph RE job, not a single probe.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
