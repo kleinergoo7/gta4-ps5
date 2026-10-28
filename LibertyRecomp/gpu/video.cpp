@@ -10257,16 +10257,24 @@ PPC_FUNC_HOOK(sub_821455B0)
 }
 
 // sub_82142230 — boot dispatcher; only it can reach the streaming-registry
-// branch. Log entry so we know whether it runs at all.
+// branch. Log entry *and* exit so we can tell "returned quickly" from "blocked
+// inside".
 PPC_FUNC_IMPL(__imp__sub_82142230);
 PPC_FUNC_HOOK(sub_82142230)
 {
     static std::atomic<uint32_t> s_calls{0};
     uint32_t n = s_calls.fetch_add(1) + 1;
+    const auto started = std::chrono::steady_clock::now();
     if (n <= 4 || (n % 300) == 0)
-        LOGF_WARNING("[DISPATCH] sub_82142230 call#{} lr={:#x} r3={}", n,
+        LOGF_WARNING("[DISPATCH] sub_82142230 enter#{} lr={:#x} r3={}", n,
                      static_cast<uint32_t>(ctx.lr), ctx.r3.u32);
     __imp__sub_82142230(ctx, base);
+    if (n <= 4 || (n % 300) == 0)
+    {
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - started).count();
+        LOGF_WARNING("[DISPATCH] sub_82142230 exit#{} ret={} after {}ms", n, ctx.r3.u32, ms);
+    }
 }
 
 // sub_822414E8 — state getter driving the boot dispatcher sub_82142230

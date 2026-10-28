@@ -311,6 +311,10 @@ static std::thread g_libertyWatchdogThread;
 extern std::atomic<uint32_t> g_diagFramesPresented;
 extern std::atomic<uint32_t> g_diagDraws;
 
+// Set by --experiment-clear-ready (see the CLI flag): lets the boot wait loop
+// exit so the post-wait dispatcher can be studied. Off by default.
+static std::atomic<bool> g_experimentClearReady{false};
+
 // Safe guest reads for diagnostics: the arena is sparse, so reading an
 // uncommitted page faults (and would fire the arena guard, perturbing the run).
 // Consult /proc/self/maps first and never touch an unreadable page. An
@@ -403,8 +407,47 @@ static void LibertyWatchdogLoop()
             fflush(stderr);
         }
 
-        if (mem_base && tick == 20) {
-            // One-shot: find where the game stored the waker callback pointer
+        if (mem_base && g_experimentClearReady.load() && tick == 24) {
+            // DIAGNOSTIC (--experiment-clear-ready): the boot wait loop spins on
+            // 0x831D5348 and nothing in this run clears it. Clear it once and
+            // observe the post-wait dispatcher. Off by default; never shipped
+            // behaviour.
+            const uint8_t before = SafeU8(0x831D5348);
+            LOGF_WARNING("[EXPERIMENT] clearing ready 0x831D5348 (was {})", (unsigned)before);
+            mem_base[0x831D5348] = 0;
+        }
+
+        if (mem_base && g_experimentClearReady.load() && tick == 40) {
+            // Resolve the handle the post-wait dispatcher blocked on.
+            const uint32_t handle = 0xF8000044u;
+            auto* ks = rex::runtime::current_kernel_state();
+            if (ks)
+            {
+                auto object = ks->object_table()->LookupObject<rex::system::XObject>(handle);
+                if (!object)
+                {
+                    LOGF_WARNING("[EXPERIMENT] handle {:#x} not found in the object table", handle);
+                }
+                else
+                {
+                    const char* typeName = "?";
+                    switch (object->type())
+                    {
+                        case rex::system::XObject::Type::Event: typeName = "Event"; break;
+                        case rex::system::XObject::Type::Semaphore: typeName = "Semaphore"; break;
+                        case rex::system::XObject::Type::Thread: typeName = "Thread"; break;
+                        case rex::system::XObject::Type::Mutant: typeName = "Mutant"; break;
+                        case rex::system::XObject::Type::Timer: typeName = "Timer"; break;
+                        case rex::system::XObject::Type::Enumerator: typeName = "Enumerator"; break;
+                        default: break;
+                    }
+                    LOGF_WARNING("[EXPERIMENT] handle {:#x} is a {} (type {})", handle, typeName,
+                                 static_cast<uint32_t>(object->type()));
+                }
+            }
+        }
+
+        if (mem_base && tick == 20) {            // One-shot: find where the game stored the waker callback pointer
             // (0x82190488). Nothing calls it directly, so it must live in a
             // data structure that some dispatcher reads.
             const uint32_t needle = 0x82190488u;
@@ -675,6 +718,7 @@ int main(int argc, char *argv[])
     bool forceDLCInstaller = false;
     bool useDefaultWorkingDirectory = false;
     bool forceInstallationCheck = false;
+    bool experimentClearReady = false;
     bool graphicsApiRetry = false;
     bool diagnostics = false;
     const char *sdlVideoDriver = nullptr;
@@ -698,6 +742,9 @@ int main(int argc, char *argv[])
         cli.add_flag("--install-dlc",          forceDLCInstaller,          "Install DLC content from staged sources");
         cli.add_flag("--use-cwd",              useDefaultWorkingDirectory, "Use current working directory instead of executable path");
         cli.add_flag("--install-check",        forceInstallationCheck,     "Force re-validation of the installed game files");
+        cli.add_flag("--experiment-clear-ready", experimentClearReady,
+                     "DIAGNOSTIC: clear the boot 'ready' byte (0x831D5348) once so the "
+                     "wait loop exits; used to study the post-wait dispatcher. Off by default.");
         cli.add_option("--install-iso", installIso, "Headless install: game ISO file or extracted folder");
         cli.add_option("--install-tu", installTu, "Headless install: title update file or folder to scan");
         cli.add_option("--install-dlc-path", installDlc, "Headless install: DLC package (repeatable)");
@@ -1487,6 +1534,7 @@ int main(int argc, char *argv[])
         DIAG_EMIT("[EXIT-TRACE] main.cpp:884 calling _Exit\n");
         std::_Exit(1);
     }
+    g_experimentClearReady.store(experimentClearReady);
     StartLibertyWatchdog();
     // rexglue's own XThread::Execute log already covers this; suppress the
     // duplicate printf (was polluting stdout with an untagged line).
