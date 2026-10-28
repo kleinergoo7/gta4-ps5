@@ -10297,6 +10297,24 @@ PPC_FUNC_HOOK(sub_821455B0)
     }
 }
 
+// Guest thread start: sub_82A21600 takes the entry point in r3 and the
+// argument in r4, then calls the entry through ctr. Logging r3 here gives the
+// real entry for every guest thread (the watchdog only sees the trampoline).
+PPC_FUNC_IMPL(__imp__sub_82A21600);
+PPC_FUNC_HOOK(sub_82A21600)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    // sub_82849940 reads the real entry and argument from the block passed as
+    // its r3, so read them at start time: the block is transient.
+    const uint32_t block = ctx.r4.u32;
+    const uint32_t real_entry = block ? PPC_LOAD_U32(block) : 0;
+    const uint32_t real_arg = block ? PPC_LOAD_U32(block + 4) : 0;
+    LOGF_WARNING("[THREAD] start#{} entry={:#x} block={:#x} real_entry={:#x} real_arg={:#x}", n,
+                 static_cast<uint32_t>(ctx.r3.u32), block, real_entry, real_arg);
+    __imp__sub_82A21600(ctx, base);
+}
+
 // sub_82142230 — boot dispatcher; only it can reach the streaming-registry
 // branch. Log entry *and* exit so we can tell "returned quickly" from "blocked
 // inside".

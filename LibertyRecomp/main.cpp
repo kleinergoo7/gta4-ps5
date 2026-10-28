@@ -528,6 +528,13 @@ static void LibertyWatchdogLoop()
                 }
                 if (++submitHits >= 4) break;
             }
+            // Thread-start descriptors passed to sub_82A21600: dump the two
+            // argument blocks the guest threads share.
+            for (uint32_t base : {0x83192980u, 0x831929ACu}) {
+                for (int k = 0; k < 8; k++)
+                    fprintf(stderr, "[THREADBLK] 0x%08X +%d = 0x%08X\n", base, k * 4,
+                            SafeU32(base + k * 4));
+            }
             fprintf(stderr, "[SUBSCAN] done, %d hit(s)\n", submitHits);
             fflush(stderr);
         }

@@ -469,6 +469,28 @@ is pulsed exactly twice and never again.
 The 0x82109320 region that also contains `sub_821B6F18` is therefore not its
 dispatcher; the pairs there are unrelated to this wall.
 
+## Guest thread inventory (measured)
+
+`sub_82849940` copies a 44-byte start block, then calls `[block+0]` with
+`[block+4]`. Hooking the thread start (`sub_82A21600`) and reading that block at
+start time recovers the real entry for every guest thread, which the periodic
+watchdog cannot see (it only ever observes the trampoline `0x82849940`).
+
+22 guest threads start in a run. Entries:
+
+| entry | threads | note |
+|---|---:|---|
+| `0x8285D368` | 5 | worker pool (distinct args) |
+| `0x82798BA0` | 3 | worker, shared arg `0x82FEA470` |
+| `0x829FF398` | 2 | worker |
+| `0x8284C5E8` | 2 | `pgStreamer` I/O workers (arg 0/1) |
+| `0x4006E5C0` | 2 | XAM/pool |
+| `0x821B6F18` | 1 | **the submit thread** — calls `sub_821B5B20` once |
+| `0x82902728` `0x825FBB68` `0x82556188` `0x823A05E8` `0x82299490` `0x82212F38` `0x821BA088` | 1 each | single-purpose threads |
+
+`0x821B6F18` is a thread entry, so the frame-complete pulse depends on a thread
+that submits once and exits. No other guest thread releases `0xF8000044`.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
