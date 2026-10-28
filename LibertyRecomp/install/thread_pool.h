@@ -75,6 +75,9 @@ namespace Install
         
         std::atomic<bool> m_stop{false};
         std::atomic<size_t> m_activeTasks{0};
+        // Task exceptions are caught so a worker survives; the count is reported
+        // at destruction because the error cannot reach the task's caller.
+        std::atomic<size_t> m_failedTasks{0};
     };
     
     /**

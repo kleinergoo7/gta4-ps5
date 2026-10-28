@@ -36,7 +36,17 @@ for root in roots:
             window = " ".join(lines[max(0, i - 6):i + 1])
             if any(tok in window for tok in reporting):
                 continue
-            hits.append((path, i + 1, line.strip()))
+            hits.append((path, i + 1, "silent failure: " + line.strip()))
+
+        # Errors must propagate: flag discarded calls and log-only catches.
+        for i, line in enumerate(lines):
+            if re.search(r"\(\s*void\s*\)\s*\w+\s*\(", line):
+                hits.append((path, i + 1, "discarded result via (void) cast: " + line.strip()))
+            if re.match(r"\s*\}?\s*catch\s*\(", line):
+                body = " ".join(lines[i:i + 6])
+                if ("throw" not in body) and not re.search(r"return\s+(false|nullptr|-1|X_STATUS)", body):
+                    if any(tok in body for tok in ("LOG", "fprintf", "REXLOG", "printf")):
+                        hits.append((path, i + 1, "catch that only logs and continues: " + line.strip()))
 
 for path, lineno, text in hits:
     print(f"{path}:{lineno}: silent failure: {text}")

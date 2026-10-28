@@ -1127,7 +1127,7 @@ int main(int argc, char *argv[])
         Journal journal;
         double lastProgressMiB = 0.0;
         double lastTotalMib = 0.0;
-        Installer::checkInstallIntegrity(GAME_INSTALL_DIRECTORY, journal, [&]()
+        const bool integrityOk = Installer::checkInstallIntegrity(GAME_INSTALL_DIRECTORY, journal, [&]()
         {
             constexpr double MiBDivisor = 1024.0 * 1024.0;
             constexpr double MiBProgressThreshold = 128.0;
@@ -1154,7 +1154,16 @@ int main(int argc, char *argv[])
         });
 
         char resultText[512];
-        if (journal.lastResult == Journal::Result::Success)
+        const bool journalOk = journal.lastResult == Journal::Result::Success;
+        if (integrityOk != journalOk)
+        {
+            // Fail loudly on disagreement: the two error channels must not diverge.
+            fprintf(stderr,
+                    "[Installer] integrity check disagreement: returned %d, journal says %s (%s)\n",
+                    (int)integrityOk, journalOk ? "success" : "failure",
+                    journal.lastErrorMessage.c_str());
+        }
+        if (integrityOk && journalOk)
         {
             snprintf(resultText, sizeof(resultText), "%s", Localise("IntegrityCheck_Success").c_str());
             fprintf(stdout, "%s\n", resultText);

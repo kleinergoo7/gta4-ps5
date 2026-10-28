@@ -103,37 +103,37 @@ struct Installer
         uint64_t totalSize = 0;
     };
 
-    static bool checkGameInstall(const std::filesystem::path &baseDirectory, std::filesystem::path &modulePath);
-    static bool checkDLCInstall(const std::filesystem::path &baseDirectory, DLC dlc);
-    static bool checkAllDLC(const std::filesystem::path &baseDirectory);
-    static bool checkInstallIntegrity(const std::filesystem::path &baseDirectory, Journal &journal, const std::function<bool()> &progressCallback);
-    static bool computeTotalSize(std::span<const FilePair> filePairs, const uint64_t *fileHashes, VirtualFileSystem &sourceVfs, Journal &journal, uint64_t &totalSize);
-    static bool checkFiles(std::span<const FilePair> filePairs, const uint64_t *fileHashes, const std::filesystem::path &targetDirectory, Journal &journal, const std::function<bool()> &progressCallback, bool checkSizeOnly);
-    static bool copyFiles(std::span<const FilePair> filePairs, const uint64_t *fileHashes, VirtualFileSystem &sourceVfs, const std::filesystem::path &targetDirectory, const std::string &validationFile, bool skipHashChecks, Journal &journal, const std::function<bool()> &progressCallback);
-    static bool parseContent(const std::filesystem::path &sourcePath, std::unique_ptr<VirtualFileSystem> &targetVfs, Journal &journal);
-    static bool parseSources(const Input &input, Journal &journal, Sources &sources);
-    static bool install(const Sources &sources, const std::filesystem::path &targetDirectory, bool skipHashChecks, Journal &journal, std::chrono::seconds endWaitTime, const std::function<bool()> &progressCallback);
+    [[nodiscard]] static bool checkGameInstall(const std::filesystem::path &baseDirectory, std::filesystem::path &modulePath);
+    [[nodiscard]] static bool checkDLCInstall(const std::filesystem::path &baseDirectory, DLC dlc);
+    [[nodiscard]] static bool checkAllDLC(const std::filesystem::path &baseDirectory);
+    [[nodiscard]] static bool checkInstallIntegrity(const std::filesystem::path &baseDirectory, Journal &journal, const std::function<bool()> &progressCallback);
+    [[nodiscard]] static bool computeTotalSize(std::span<const FilePair> filePairs, const uint64_t *fileHashes, VirtualFileSystem &sourceVfs, Journal &journal, uint64_t &totalSize);
+    [[nodiscard]] static bool checkFiles(std::span<const FilePair> filePairs, const uint64_t *fileHashes, const std::filesystem::path &targetDirectory, Journal &journal, const std::function<bool()> &progressCallback, bool checkSizeOnly);
+    [[nodiscard]] static bool copyFiles(std::span<const FilePair> filePairs, const uint64_t *fileHashes, VirtualFileSystem &sourceVfs, const std::filesystem::path &targetDirectory, const std::string &validationFile, bool skipHashChecks, Journal &journal, const std::function<bool()> &progressCallback);
+    [[nodiscard]] static bool parseContent(const std::filesystem::path &sourcePath, std::unique_ptr<VirtualFileSystem> &targetVfs, Journal &journal);
+    [[nodiscard]] static bool parseSources(const Input &input, Journal &journal, Sources &sources);
+    [[nodiscard]] static bool install(const Sources &sources, const std::filesystem::path &targetDirectory, bool skipHashChecks, Journal &journal, std::chrono::seconds endWaitTime, const std::function<bool()> &progressCallback);
     static void rollback(Journal &journal);
 
     // Convenience method for checking if the specified file contains the game. This should be used when the user selects the file.
-    static bool parseGame(const std::filesystem::path &sourcePath);
+    [[nodiscard]] static bool parseGame(const std::filesystem::path &sourcePath);
     
     // Validate game version and region (like Banjo Recompiled's version check dialog)
     // Returns detailed result for UI display
-    static GameVersionResult validateGameVersion(const std::filesystem::path &sourcePath);
+    [[nodiscard]] static GameVersionResult validateGameVersion(const std::filesystem::path &sourcePath);
 
     // Convenience method for checking if the specified file contains a title update. This should be used when the user selects the file.
-    static bool parseUpdate(const std::filesystem::path &sourcePath);
+    [[nodiscard]] static bool parseUpdate(const std::filesystem::path &sourcePath);
     
     // Detect which title update version is in the STFS container
-    static TitleUpdate detectUpdateVersion(const std::filesystem::path &sourcePath);
+    [[nodiscard]] static TitleUpdate detectUpdateVersion(const std::filesystem::path &sourcePath);
 
     // Convenience method for the installer to check which DLC the file that was specified corresponds to. This should be used when the user selects the file.
-    static DLC parseDLC(const std::filesystem::path &sourcePath);
+    [[nodiscard]] static DLC parseDLC(const std::filesystem::path &sourcePath);
     
     // Check if a title update is compatible with the base game XEX
     // Returns empty string on success, error message on failure
-    static std::string checkGameUpdateCompatibility(
+    [[nodiscard]] static std::string checkGameUpdateCompatibility(
         const std::filesystem::path& gameSourcePath,
         const std::filesystem::path& updatePath);
     

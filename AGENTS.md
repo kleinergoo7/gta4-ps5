@@ -84,6 +84,10 @@ A workaround hides a bug; it does not fix it.
 - Fix the root cause. If you cannot, add a workaround that follows the workaround policy above and open a note for the root cause.
 - Fail loudly. Do not swallow errors, add silent fallbacks, clamp or zero bad values without logging, or widen a guard to make a crash go away.
 - Every failure path logs the reason (file, address, size where relevant) or hands back an error the caller reports. A bare `return false`/`return nullptr` with no log is a bug. Check with `tools/check_loud_failures.sh` (advisory; `--strict` for CI).
+- **Errors propagate.** A function that can fail returns a status (`bool`, `std::expected`, `optional`, error code, `X_STATUS`). Callers must handle it: abort the operation, surface it to the user, or re-raise with added context. Logging alone is not handling.
+- Never discard a failure: no `(void)call()`, no ignoring a `[[nodiscard]]` result, no `catch` that logs and then returns success.
+- A caller may only continue past a failure if continuing is a deliberate `WORKAROUND` — labelled, logged, with a note naming the root cause.
+- Prefer one error path per operation: whichever step detects the failure names the operation, so the log answers "which step failed", not just "something failed".
 - Do not "fix" a crash by committing more memory, skipping the draw, or ignoring a null. First find out why it is null or uninitialized.
 - Make bugs reproducible before changing code: a test, a log line, or exact run steps.
 - Never delete or weaken a test, assert, or log to get a green result.

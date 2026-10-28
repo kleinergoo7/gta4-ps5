@@ -49,10 +49,12 @@ namespace Install
                     }
                     catch (const std::exception& e)
                     {
+                        m_failedTasks++;
                         LOGF_ERROR("[ThreadPool] Task exception: {}", e.what());
                     }
                     catch (...)
                     {
+                        m_failedTasks++;
                         LOG_ERROR("[ThreadPool] Task threw unknown exception");
                     }
                     
@@ -80,7 +82,17 @@ namespace Install
             }
         }
         
-        LOG_UTILITY("[ThreadPool] Pool destroyed");
+        const size_t failed = m_failedTasks.load();
+        if (failed != 0)
+        {
+            // A swallowed task exception never reaches its caller, so at least
+            // report the count loudly when the pool goes away.
+            LOGF_ERROR("[ThreadPool] Pool destroyed with {} failed task(s)", failed);
+        }
+        else
+        {
+            LOG_UTILITY("[ThreadPool] Pool destroyed");
+        }
     }
     
     void ThreadPool::Wait()
