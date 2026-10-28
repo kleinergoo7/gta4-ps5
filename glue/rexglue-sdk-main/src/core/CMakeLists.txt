@@ -132,10 +132,16 @@ if(REXGLUE_BUILD_TESTS)
     target_compile_definitions(rexcore PUBLIC REX_DIAGNOSTICS_TESTING=1)
 endif()
 
+if(PS5 OR (UNIX AND NOT APPLE AND NOT ANDROID))
+    # [ps5 port] ps5_diag.cpp only compiled on PS5, but its counters/logging
+    # hooks are referenced from POSIX core files on every platform; the TU is
+    # portable (Linux uses gettid() in place of pthread_getthreadid_np).
+    target_sources(rexcore PRIVATE ps5_diag.cpp)
+endif()
 if(PS5)
     # [ps5 port] the SDK's libc has pthreads; there is no librt / libdl.
     target_link_libraries(rexcore PUBLIC SceSystemService SceUserService ScePad SceAudioOut ps5platform)
-    target_sources(rexcore PRIVATE ps5_libc_extras.c ps5_diag.cpp)
+    target_sources(rexcore PRIVATE ps5_libc_extras.c)
 elseif(APPLE)
     target_link_libraries(rexcore PRIVATE pthread)
 elseif(ANDROID)

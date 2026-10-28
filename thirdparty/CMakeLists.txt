@@ -43,9 +43,13 @@ else()
 endif()
 
 # Disable vcpkg for msdf-atlas-gen on console/Android cross-compile builds
-if (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4" OR LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "switch" OR ANDROID)
+# and on Linux desktop (system freetype via find_package instead).
+if (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4" OR LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "switch" OR ANDROID OR
+    (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "desktop"))
     set(MSDF_ATLAS_USE_VCPKG OFF)
     set(MSDFGEN_USE_VCPKG OFF)
+endif()
+if (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4" OR LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "switch" OR ANDROID)
     # Build Freetype from source for console/Android platforms
     include(FetchContent)
     FetchContent_Declare(
@@ -72,7 +76,14 @@ add_subdirectory("${LIBERTY_RECOMP_THIRDPARTY_ROOT}/msdf-atlas-gen")
 if (NOT (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4" OR LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "switch" OR ANDROID))
     add_subdirectory("${LIBERTY_RECOMP_THIRDPARTY_ROOT}/nativefiledialog-extended")
 endif()
-add_subdirectory("${LIBERTY_RECOMP_THIRDPARTY_ROOT}/o1heap")
+# o1heap: the copy under thirdparty/o1heap is stale (no o1heapReallocate,
+# 32-byte alignment) while glue's rexcrt heap needs the v3 API. The current
+# v3.0.0 source is vendored at glue/rexglue-sdk-main/thirdparty/o1heap and
+# built by glue/rexglue-sdk-main/thirdparty/CMakeLists.txt (guarded by
+# if(NOT TARGET o1heap)), so the stale copy must not create the target.
+# (Upstream must either refresh this copy to v3 or drop it; until then the
+# glue version is the single definition on every platform.)
+# add_subdirectory("${LIBERTY_RECOMP_THIRDPARTY_ROOT}/o1heap")
 # SDL2 + SDL2_mixer DISABLED — migrated to SDL3 (built in glue/CMakeLists.txt)
 # add_subdirectory("${LIBERTY_RECOMP_THIRDPARTY_ROOT}/SDL")
 # add_subdirectory("${LIBERTY_RECOMP_THIRDPARTY_ROOT}/SDL_mixer")

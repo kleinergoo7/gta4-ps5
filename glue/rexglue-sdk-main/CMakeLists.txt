@@ -9,7 +9,7 @@ else()
 endif()
 
 project(ReXGlue
-    VERSION 0.9.0
+    VERSION 1.0.0
     LANGUAGES ${REXGLUE_LANGUAGES}
     DESCRIPTION "Xbox 360 Recompilation SDK"
 )
@@ -90,13 +90,17 @@ elseif(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 endif()
 
-# Enforce the Clang family. CMake reports Apple's supported Clang toolchain as
-# AppleClang even when the configured compiler executable is clang++.
-if(NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$")
-    message(FATAL_ERROR "ReXGlue requires Clang compiler. Please set CMAKE_CXX_COMPILER to clang++")
+# Enforce the Clang family by default. CMake reports Apple's supported Clang
+# toolchain as AppleClang even when the configured compiler executable is
+# clang++. Other compilers are only allowed by explicit opt-out
+# (REXGLUE_REQUIRE_CLANG=OFF) for portability builds; generated code is only
+# validated under Clang.
+option(REXGLUE_REQUIRE_CLANG "Require the Clang compiler family for ReXGlue" ON)
+if(REXGLUE_REQUIRE_CLANG AND NOT CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$")
+    message(FATAL_ERROR "ReXGlue requires Clang compiler. Please set CMAKE_CXX_COMPILER to clang++ (or configure with -DREXGLUE_REQUIRE_CLANG=OFF for an unsupported portability build)")
 endif()
 
-if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
+if(REXGLUE_REQUIRE_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "18.0")
     message(FATAL_ERROR "ReXGlue requires Clang 18 or newer (found ${CMAKE_CXX_COMPILER_VERSION})")
 endif()
 
@@ -139,7 +143,8 @@ endif()
 # and FP-exception awareness, which blocks reordering and vectorization of the
 # renderer's float code; guest FP semantics live in the generated code, which
 # never had it. Contract off still forbids fusing into FMA.
-if(ANDROID)
+# GCC has no -ffp-model at all; use -ffp-contract=off there too.
+if(ANDROID OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_compile_options(-ffp-contract=off $<$<CONFIG:RELWITHDEBINFO>:-O3>)
 else()
     add_compile_options(-ffp-model=strict)

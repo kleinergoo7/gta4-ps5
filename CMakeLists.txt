@@ -2,7 +2,11 @@ cmake_minimum_required (VERSION 3.29)
 
 set(LIBERTY_RECOMP_THIRDPARTY_ROOT ${CMAKE_SOURCE_DIR}/thirdparty)
 set(LIBERTY_RECOMP_TOOLS_ROOT ${CMAKE_SOURCE_DIR}/tools)
-set(CMAKE_CXX_STANDARD 23)
+# C++ standard for first-party targets. The RexGlue SDK pins its own standard
+# (it uses C++23 library features); generated and vendored code is untouched.
+set(LIBERTY_RECOMP_CXX_STANDARD 23 CACHE STRING "C++ standard for first-party targets")
+set(CMAKE_CXX_STANDARD ${LIBERTY_RECOMP_CXX_STANDARD})
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(BUILD_SHARED_LIBS OFF)
 
 # Enable Hot Reload for MSVC compilers if supported.
@@ -46,9 +50,29 @@ if(NOT LIBERTY_RECOMP_GRAINE_MAC)
     add_compile_definitions(FMT_USE_CONSTEVAL=0)
 endif()
 
-# ─── vcpkg check (desktop platforms only) ──────────────────────────────────
-# Mobile/console platforms use system SDKs and don't need vcpkg
-if(NOT LIBERTY_RECOMP_GRAINE_MAC AND
+# ─── System dependencies (no package manager) ──────────────────────────────
+# Third-party libraries come from the OS package manager (zypper/dnf/apt) and
+# Linuxbrew, found via standard find_package/pkg-config paths:
+#   zypper: libcurl-devel, libopenssl-devel, freetype2-devel, fmt-devel,
+#           spdlog-devel, discord-rpc-devel (optional)
+#   brew:   protobuf (or any libprotobuf + protoc install)
+# No VCPKG_ROOT, toolchain file, or bundled ports are needed or used on Linux.
+# ─── Homebrew prefix (protobuf etc.) ───────────────────────────────────────
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "/home/linuxbrew/.linuxbrew")
+    list(APPEND CMAKE_PREFIX_PATH "/home/linuxbrew/.linuxbrew")
+endif()
+# ─── Position-independent code ─────────────────────────────────────────────
+# The old vcpkg toolchain injected -fPIC globally; keep that behavior so
+# shared objects (librexruntime.so, plugins) keep linking.
+if(NOT MSVC)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+# ────────────────────────────────────────────────────────────────────────────
+
+# ─── vcpkg check (desktop platforms only, non-Linux) ───────────────────────
+# Mobile/console platforms use system SDKs and don't need vcpkg.
+# Linux desktop uses system/brew deps, never vcpkg.
+if(NOT LIBERTY_RECOMP_GRAINE_MAC AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
    (NOT DEFINED LIBERTY_RECOMP_TARGET_PLATFORM OR
     LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "desktop"))
     if(NOT DEFINED ENV{VCPKG_ROOT})
@@ -172,9 +196,15 @@ string(TOLOWER "${LIBERTY_RECOMP_ARCHITECTURE}" LIBERTY_RECOMP_ARCHITECTURE)
 message(STATUS "Detected architecture: ${LIBERTY_RECOMP_ARCHITECTURE}")
 
 if (LIBERTY_RECOMP_ARCHITECTURE STREQUAL "x86_64" OR LIBERTY_RECOMP_ARCHITECTURE STREQUAL "amd64")
-    # Target Sandy Bridge for all projects
+    # Baseline x86-64-v3 (AVX2, ~2013). Plain x86-64 (SSE2) does not compile
+    # (the SDK uses SSSE3 intrinsics without per-function targets), and v2
+    # proved too narrow in practice; v3 is still a generic baseline with no
+    # chip name. No AVX intrinsics in first-party code (verified); SDL3 and
+    # snappy gate their own per-file AVX paths. Override with
+    # -DLIBERTY_RECOMP_ARCH=native (fastest local builds, non-portable).
+    set(LIBERTY_RECOMP_ARCH "x86-64-v3" CACHE STRING "Value for -march on x86-64 (x86-64-v2/v3/v4, native, ...)")
     add_compile_options(
-        -march=sandybridge
+        -march=${LIBERTY_RECOMP_ARCH}
     )
 endif()
 
@@ -184,6 +214,37 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 option(USE_REXGLUE_RUNTIME "Use RexGlue SDK for runtime infrastructure" ON)
+option(LIBERTY_RECOMP_STRICT_WARNINGS "Strict warnings (-Wall -Wextra -pedantic-errors) for first-party targets (GCC/Clang only; vendored code keeps its own flags)" OFF)
+
+# Strict warnings helper for first-party targets. Per-target (not directory
+# scope) so generated or vendored sources sharing a directory are never
+# affected. Nothing is silenced: warnings are fixed in the source instead.
+# Usage: liberty_strict_warnings(<target>) after the target is created.
+macro(liberty_strict_warnings TARGET)
+    if(LIBERTY_RECOMP_STRICT_WARNINGS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        target_compile_options(${TARGET} PRIVATE -Wall -Wextra -pedantic-errors)
+    endif()
+endmacro()
+
+# Marks explicit vendored directories as -isystem for one first-party target,
+# so strict warnings never fire inside headers we must not touch. Explicit
+# directories (not target-property queries: those may hold generator
+# expressions that split on ';'). Grows one call at a time, only when a build
+# proves a new directory warns.
+# Usage: liberty_systemize(<target> <dir> [<dir>...]).
+macro(liberty_systemize TARGET)
+    if(LIBERTY_RECOMP_STRICT_WARNINGS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        foreach(_d ${ARGN})
+            # One SHELL item per directory (compile-step only via
+            # COMPILE_LANGUAGE, so nothing leaks onto the link line).
+            # SHELL items must stay unique per directory: CMake deduplicates
+            # identical flag strings, which would leave all but one -isystem
+            # without its directory.
+            target_compile_options(${TARGET} PRIVATE
+                "SHELL:$<$<COMPILE_LANGUAGE:C,CXX>:-isystem ${_d}>")
+        endforeach()
+    endif()
+endmacro()
 
 if(LIBERTY_RECOMP_GRAINE_MAC)
     if(NOT USE_REXGLUE_RUNTIME)
@@ -238,6 +299,15 @@ endif()
 # RexGlue SDK integration
 if(USE_REXGLUE_RUNTIME)
     add_subdirectory("glue")
+endif()
+
+# GCC 15 miscompiles the vendored FFmpeg fork's NEG_SSR32/NEG_USR32 inline asm
+# (it folds the shift count and emits `shr $-N`, which GAS rejects). The fork
+# pins that code, so the GCC portability config builds libavcodec at -O0
+# instead: identical semantics, slower DSP paths. Clang/default configs keep
+# their flags. Applies to the C compiler actually used for those sources.
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND TARGET libavcodec)
+    target_compile_options(libavcodec PRIVATE -O0)
 endif()
 
 # Include sub-projects.

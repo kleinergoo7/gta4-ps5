@@ -6,6 +6,9 @@ add_compile_options(
 
 if (WIN32)
     add_compile_options(/fp:strict)
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC has no -ffp-model; -ffp-contract=off is the matching precision half.
+    add_compile_options(-ffp-contract=off)
 else()
     add_compile_options(-ffp-model=strict)
 endif()
@@ -103,6 +106,7 @@ target_include_directories(LibertyRecompLib PRIVATE
 )
 
 # RexGlue generated code needs access to RexGlue SDK headers
+# (kernel sources are part of rexruntime; there is no rexkernel target)
 if(TARGET rexcore)
-    target_link_libraries(LibertyRecompLib PRIVATE rexcore rexruntime rexkernel)
+    target_link_libraries(LibertyRecompLib PRIVATE rexcore rexruntime)
 endif()

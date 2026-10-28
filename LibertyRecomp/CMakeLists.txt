@@ -99,20 +99,36 @@ endfunction()
 
 add_compile_options(
     -fno-strict-aliasing
+)
+
+# Warning suppressions for the default build. Strict configurations
+# (LIBERTY_RECOMP_STRICT_WARNINGS) skip these and fix the warnings instead.
+# Names both GCC and Clang understand:
+if(NOT LIBERTY_RECOMP_STRICT_WARNINGS)
+add_compile_options(
     -Wno-switch
     -Wno-unused-function
     -Wno-unused-variable
     -Wno-unused-but-set-variable
+    -Wno-invalid-offsetof
+)
+# Clang-only suppression names (GCC warns about unknown -Wno-* options):
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang")
+add_compile_options(
     -Wno-void-pointer-to-int-cast
     -Wno-int-to-void-pointer-cast
-    -Wno-invalid-offsetof
     -Wno-null-arithmetic
     -Wno-null-conversion
     -Wno-tautological-undefined-compare
 )
+endif()
+endif()
 
 if (WIN32)
     add_compile_options(/fp:strict)
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # GCC has no -ffp-model; -ffp-contract=off is the matching precision half.
+    add_compile_options(-ffp-contract=off)
 else()
     add_compile_options(-ffp-model=strict)
 endif()
@@ -447,7 +463,10 @@ set(LIBERTY_RECOMP_MOD_CXX_SOURCES
 # runtime/ is header-only: only rex_thread_state.h is live; rest removed.
 set(LIBERTY_RECOMP_RUNTIME_CXX_SOURCES)
 
-set(LIBERTY_RECOMP_THIRDPARTY_SOURCES
+# Vendored library sources get their own target so first-party warning flags
+# never apply to them. Includes stay PRIVATE -I: the pinned imgui must keep
+# winning over the SDK's older copy exactly as before.
+add_library(liberty_imgui STATIC
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui/imgui.cpp"
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui/imgui_demo.cpp"
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui/imgui_draw.cpp"
@@ -456,14 +475,28 @@ set(LIBERTY_RECOMP_THIRDPARTY_SOURCES
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/implot/implot.cpp"
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/implot/implot_demo.cpp"
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/implot/implot_items.cpp"
-    "${LIBERTY_RECOMP_TOOLS_ROOT}/XenosRecomp/thirdparty/smol-v/source/smolv.cpp"
 )
-# imgui SDL3 backend — desktop only (consoles don't use SDL3)
+target_include_directories(liberty_imgui PRIVATE
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/implot"
+)
+# imgui SDL3 backend - desktop only (consoles don't use SDL3)
 if (NOT (LIBERTY_RECOMP_PS4 OR LIBERTY_RECOMP_NX))
-    list(APPEND LIBERTY_RECOMP_THIRDPARTY_SOURCES
-        "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui/backends/imgui_impl_sdl3.cpp"
-    )
+    target_sources(liberty_imgui PRIVATE
+        "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui/backends/imgui_impl_sdl3.cpp")
+    target_link_libraries(liberty_imgui PRIVATE SDL3::SDL3-static)
 endif()
+# Same ABI-affecting defines as the exe: imgui sources must see identical
+# config macros, otherwise struct layouts diverge across the link boundary.
+if (NOT (LIBERTY_RECOMP_PS4 OR LIBERTY_RECOMP_NX OR ANDROID))
+    target_compile_definitions(liberty_imgui PRIVATE IMGUI_DISABLE_DEBUG_TOOLS)
+endif()
+# Vendored single-file library: its own target, same reason as liberty_imgui.
+add_library(liberty_smolv STATIC
+    "${LIBERTY_RECOMP_TOOLS_ROOT}/XenosRecomp/thirdparty/smol-v/source/smolv.cpp")
+target_include_directories(liberty_smolv PRIVATE
+    "${LIBERTY_RECOMP_TOOLS_ROOT}/XenosRecomp/thirdparty/smol-v/source")
+set(LIBERTY_RECOMP_THIRDPARTY_SOURCES "")
 
 set(LIBERTY_RECOMP_THIRDPARTY_INCLUDES
     "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/concurrentqueue"
@@ -1485,7 +1518,7 @@ if (NOT (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4" OR CMAKE_SYSTEM_NAME STRE
     find_package(discord-rpc CONFIG QUIET)
     if (discord-rpc_FOUND)
         set(LIBERTY_RECOMP_HAS_DISCORD_RPC TRUE)
-        message(STATUS "Discord RPC: found via vcpkg")
+        message(STATUS "Discord RPC: found, presence enabled")
     else()
         message(STATUS "Discord RPC: not found, presence will be disabled")
     endif()
@@ -1549,7 +1582,31 @@ if (LIBERTY_RECOMP_PS4 OR LIBERTY_RECOMP_NX)
     target_link_libraries(LibertyRecomp PRIVATE zlibstatic)
 elseif(ANDROID)
     target_link_libraries(LibertyRecomp PRIVATE z)
+else()
+    find_package(ZLIB REQUIRED)
+    target_link_libraries(LibertyRecomp PRIVATE ZLIB::ZLIB)
 endif()
+
+# Strict warnings for the executable target (first-party sources).
+liberty_strict_warnings(LibertyRecomp)
+# Vendored sources built above (liberty_imgui, liberty_smolv).
+target_link_libraries(LibertyRecomp PRIVATE liberty_imgui liberty_smolv)
+# Vendored plume headers must stay untouched; consume them as -isystem.
+# -isystem duplicates -I here (it does not replace it): resolution order is
+# unchanged, warnings inside are muted. That is why thirdparty/imgui CAN be
+# listed: the -I entry that selects the pinned version over the SDK's older
+# copy stays exactly where it was.
+liberty_systemize(LibertyRecomp
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/plume"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/plume/contrib/volk"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/plume/contrib/Vulkan-Headers/include"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/plume/contrib/VulkanMemoryAllocator/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../glue/rexglue-sdk-main/thirdparty/simde"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../glue/rexglue-sdk-main/thirdparty/simde/simde"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/imgui"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../glue/rexglue-sdk-main/thirdparty/imgui"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/msdf-atlas-gen"
+    "${LIBERTY_RECOMP_THIRDPARTY_ROOT}/msdf-atlas-gen/msdfgen")
 
 # Console SDK include paths
 if (LIBERTY_RECOMP_PS4)
@@ -1577,6 +1634,13 @@ if (LIBERTY_RECOMP_HAS_CURL)
 else()
     target_compile_definitions(LibertyRecomp PRIVATE LIBERTY_RECOMP_NO_CURL)
 endif()
+
+# OpenSSL (AES for the legacy RPF extractor) — Linux desktop only
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(LibertyRecomp PRIVATE OpenSSL::Crypto)
+endif()
+
 if (LIBERTY_RECOMP_HAS_GNS)
     target_link_libraries(LibertyRecomp PRIVATE GameNetworkingSockets::static)
 else()
@@ -1679,7 +1743,8 @@ if(USE_REXGLUE_RUNTIME)
             "${LIBERTY_TOUCH_SOURCE_ROOT}/input/context_touch_activity_context.cpp"
             "${LIBERTY_TOUCH_SOURCE_ROOT}/input/context_touch_activity_layout.cpp"
             "${LIBERTY_TOUCH_SOURCE_ROOT}/input/context_touch_draw.cpp"
-            "${LIBERTY_TOUCH_SOURCE_ROOT}/input/context_touch_settings.cpp")
+            "${LIBERTY_TOUCH_SOURCE_ROOT}/input/context_touch_settings.cpp"
+            "${LIBERTY_TOUCH_SOURCE_ROOT}/input/gamepad_touch_overlay.cpp")
         target_sources(LibertyRecomp PRIVATE ${LIBERTY_TOUCH_SHARED_SOURCES}
             hid/context_touch_host.cpp gpu/context_touch_renderer.cpp)
         set_source_files_properties(${LIBERTY_TOUCH_SHARED_SOURCES}
@@ -1704,13 +1769,15 @@ if(USE_REXGLUE_RUNTIME)
         target_sources(LibertyRecomp PRIVATE
             "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_feedback.cpp"
             "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_event_hooks.cpp"
-            "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_legacy_hooks.cpp")
+            "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_legacy_hooks.cpp"
+            "${LIBERTY_SONY_SOURCE_ROOT}/gta4_camera_hooks.cpp")
         target_include_directories(LibertyRecomp PRIVATE
             "${LIBERTY_SONY_SOURCE_ROOT}/../generated")
         set_source_files_properties(
             "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_feedback.cpp"
             "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_event_hooks.cpp"
             "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_legacy_hooks.cpp"
+            "${LIBERTY_SONY_SOURCE_ROOT}/gta4_camera_hooks.cpp"
             PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
         set_source_files_properties(
             "${LIBERTY_SONY_SOURCE_ROOT}/gta4_sony_feedback.cpp"
