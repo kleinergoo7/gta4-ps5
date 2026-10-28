@@ -861,27 +861,20 @@ bool Installer::install(const Sources &sources, const std::filesystem::path &tar
             std::string baseName = rpfName.substr(0, rpfName.find('.'));
             std::filesystem::path outputDir = gameDir / baseName;
             
-            // Skip if already extracted (non-empty directory exists)
+            // Skip if already extracted (non-empty directory exists).
+            // The top-level archives must stay in place: the game opens
+            // game:\common.rpf / xbox360.rpf / audio.rpf directly (upstream
+            // keeps them; only nested RPFs are removed after extraction).
             std::error_code ec;
-            if (std::filesystem::exists(outputDir, ec) && 
+            if (std::filesystem::exists(outputDir, ec) &&
                 std::filesystem::is_directory(outputDir, ec) &&
                 !std::filesystem::is_empty(outputDir, ec))
             {
-                // Already extracted, delete the .rpf if it still exists
-                if (std::filesystem::exists(rpfPath, ec))
-                {
-                    std::filesystem::remove(rpfPath, ec);
-                }
                 continue;
             }
-            
-            // Extract RPF contents recursively
-            if (extractRpfRecursive(rpfPath, outputDir))
-            {
-                // Delete original RPF after successful extraction
-                // VFS serves from extracted directories, so keeping both wastes disk space
-                std::filesystem::remove(rpfPath, ec);
-            }
+
+            // Extract RPF contents recursively, keeping the original archive.
+            extractRpfRecursive(rpfPath, outputDir);
         }
     }
 
