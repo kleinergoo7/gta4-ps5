@@ -254,6 +254,22 @@ working; the open question is now narrow and single:
 Answering that needs control-flow reading of the loader with a decompiler
 (the `liberty-decomp`/Ghidra data is not in this checkout), not more probes.
 
+**Experiment: clearing `ready` proves the block, but is not sufficient.**
+Forcing `0x831D5348 = 0` once (labelled experiment, reverted afterwards):
+
+- the boot wait loop exits and **`sub_82142230` is entered** for the first time
+  (`[DISPATCH] sub_82142230 call#1 lr=0x821400C0 r3=0`) — so `ready` is
+  confirmed as the gate;
+- but the runtime then does nothing further: one call, no further log lines,
+  `reg` stays 0, `presents`/`draws` stay 2/6, scene stays 0 even after 73 s.
+
+So clearing `ready` unblocks the *sequencing*, yet the runtime still exits or
+parks immediately. Its first streaming call site is gated on `state == 7`, and
+the state it starts with (`r3 = 0`) never reaches 7 in this run.
+
+Next question, narrowed again: **what advances `sub_82142230`'s state machine to
+7** — and does it need the initial load, or something else entirely?
+
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
 memory `watch` aborts the process (SIGABRT), and `break` stops the guest and
