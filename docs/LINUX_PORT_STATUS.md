@@ -284,6 +284,24 @@ boot loop exit — the signal is already spent, so it blocks forever.
 That is a release/consume ordering problem, and it matches the whole picture:
 on hardware the dispatcher is already waiting when the loader signals.
 
+**Who signals it (measured).** Hooking the release wrapper `sub_82849860` and
+logging the caller's return address pairs both sides:
+
+- releases to `0xF8000044` come from **`sub_821B5B20`** (`caller_lr` `0x821B5C48`
+  and `0x821B5C1C`) — the render/submit loop that we measured running hundreds
+  of times;
+- the waiter is `LR=0x82849804` (the wait wrapper);
+- only **two** releases happen, both during init.
+
+So the semaphore is a "work ready" pulse between the submit loop and the
+dispatcher. It is signalled at init and then never again, and the dispatcher
+only starts waiting much later — after the boot loop finally exits.
+
+This is a **boot-ordering fault, not a semaphore bug**: the consumer must be
+waiting while the producer still pulses. Any fix that merely adds a signal would
+be a gate; the real fix is to have the dispatcher running before/with the submit
+loop.
+
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
 memory `watch` aborts the process (SIGABRT), and `break` stops the guest and

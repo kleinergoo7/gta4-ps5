@@ -10116,6 +10116,19 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// sub_82849860 — semaphore release wrapper (NtReleaseSemaphore(handle,1,0)).
+// Log the caller LR (who signals) and the handle, to pair it with the waiter.
+PPC_FUNC_IMPL(__imp__sub_82849860);
+PPC_FUNC_HOOK(sub_82849860)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 12 || (n % 100) == 0)
+        LOGF_WARNING("[SEMREL] release#{} caller_lr={:#x} handle={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr), ctx.r3.u32);
+    __imp__sub_82849860(ctx, base);
+}
+
 // Title-level in-flight loader probes (docs §8): slot init and load issue.
 PPC_FUNC_IMPL(__imp__sub_82678EB0);
 PPC_FUNC_HOOK(sub_82678EB0)
