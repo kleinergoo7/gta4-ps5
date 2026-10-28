@@ -305,6 +305,10 @@ void HostStartup()
 static std::atomic<bool> g_libertyWatchdogRunning{false};
 static std::thread g_libertyWatchdogThread;
 
+// Defined in gpu/video.cpp; printed by the watchdog as boot progress.
+extern std::atomic<uint32_t> g_diagFramesPresented;
+extern std::atomic<uint32_t> g_diagDraws;
+
 static void LibertyWatchdogLoop()
 {
     using namespace std::chrono;
@@ -319,6 +323,18 @@ static void LibertyWatchdogLoop()
         fprintf(stderr, "[WATCHDOG] tick=%llu t=%.1fs threads=%zu\n",
                 (unsigned long long)tick, elapsed_s, threads.size());
         uint8_t* mem_base = g_memory.base;
+        if (mem_base && (tick % 10) == 0) {
+            // Loader/world-init flags polled by the main thread's idle loop
+            // (sub_821458B8 reads these two bytes).
+            fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u gate=%d scene=0x%08X presents=%u draws=%u\n",
+                    elapsed_s,
+                    (unsigned)mem_base[0x831D5335],
+                    (unsigned)mem_base[0x831D5348],
+                    (int32_t)__builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x82B0B48C)),
+                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831C2458)),
+                    g_diagFramesPresented.load(std::memory_order_relaxed),
+                    g_diagDraws.load(std::memory_order_relaxed));
+        }
         auto read_guest_u32 = [mem_base](uint32_t ea) -> uint32_t {
             if (!mem_base) return 0;
             if (ea < 0x10000u || ea >= PPC_MEMORY_SIZE - 4) return 0;

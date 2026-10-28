@@ -443,6 +443,17 @@ static std::unique_ptr<RenderCommandFence> g_copyCommandFence;
 static std::unique_ptr<RenderSwapChain> g_swapChain;
 static bool g_swapChainValid;
 
+// Progress counters for headless/autonomous bring-up diagnostics: the
+// watchdog thread in main.cpp prints these so a stuck boot is visible
+// without watching the window.
+std::atomic<uint32_t> g_diagFramesPresented{0};
+std::atomic<uint32_t> g_diagDraws{0};
+// Rolling signature of the current frame's draw stream: any change in what the
+// game draws flips it, so a headless agent can detect "the picture changed"
+// without GPU readback. Reset after each present.
+std::atomic<uint64_t> g_diagFrameSig{1469598103934665603ull};
+static uint64_t g_diagLastSig = 0;
+
 // HDR output support - format selection based on Config::HDRMode
 static RenderFormat GetBackbufferFormat() {
     switch (Config::HDRMode) {
@@ -3497,6 +3508,7 @@ void Video::Present()
     static uint32_t s_presentCount = 0;
     static uint32_t s_droppedFrames = 0;
     ++s_presentCount;
+    g_diagFramesPresented.fetch_add(1, std::memory_order_relaxed);
     if (s_presentCount <= 5 || (s_presentCount % 600) == 0)
     {
         LOGF_WARNING("Video::Present called #{} (swapChainValid={}, dropped={})", s_presentCount, g_swapChainValid, s_droppedFrames);
@@ -3738,6 +3750,22 @@ void Video::Present()
     }
 
     g_pendingWaitOnSwapChain = true;
+
+    // Frame-signature alarm: log only when the frame's draw stream changes,
+    // so "frozen" and "the screen changed" are distinguishable from the log.
+    {
+        const uint64_t sig = g_diagFrameSig.exchange(1469598103934665603ull, std::memory_order_relaxed);
+        if (sig != g_diagLastSig)
+        {
+            static int s_changes = 0;
+            ++s_changes;
+            LOGF_WARNING("[FRAME] change#{} sig=0x{:016X} presents={} draws={}",
+                         s_changes, sig,
+                         g_diagFramesPresented.load(std::memory_order_relaxed),
+                         g_diagDraws.load(std::memory_order_relaxed));
+            g_diagLastSig = sig;
+        }
+    }
 
     g_frame = g_nextFrame;
     g_nextFrame = (g_frame + 1) % NUM_FRAMES;
@@ -5933,6 +5961,19 @@ static void DrawPrimitive(GuestDevice* device, uint32_t primitiveType, uint32_t 
 {
     static uint32_t s_drawPrimitiveCount = 0;
     ++s_drawPrimitiveCount;
+    g_diagDraws.fetch_add(1, std::memory_order_relaxed);
+    {
+        // Fold this draw's shape into the frame signature (FNV-1a).
+        uint64_t sig = g_diagFrameSig.load(std::memory_order_relaxed);
+        const uint32_t parts[4] = { primitiveType, startVertex, primitiveCount,
+                                    static_cast<uint32_t>(reinterpret_cast<uintptr_t>(device)) };
+        for (uint32_t v : parts)
+        {
+            sig ^= v;
+            sig *= 1099511628211ull;
+        }
+        g_diagFrameSig.store(sig, std::memory_order_relaxed);
+    }
     
     // ALWAYS log first 50 calls to verify hook is working
     if (s_drawPrimitiveCount <= 50 || (s_drawPrimitiveCount % 5000) == 0)
@@ -9994,6 +10035,35 @@ PPC_FUNC_HOOK(sub_82A488B8)
         return;
     }
     __imp__sub_82A488B8(ctx, base);
+}
+
+// sub_82A1A450 — WaitForSingleObject wrapper probe: identify what the render
+// thread parks on. Logs each distinct handle with its object type, then calls
+// through. (Import alias 82A74F64 is not hookable; this guest caller is.)
+PPC_FUNC_IMPL(__imp__sub_82A1A450);
+PPC_FUNC_HOOK(sub_82A1A450)
+{
+    static int s_count = 0;
+    static uint32_t s_seen[8] = {};
+    const uint32_t handle = ctx.r3.u32;
+    bool known = false;
+    for (int i = 0; i < 8; i++)
+    {
+        if (s_seen[i] == handle)
+        {
+            known = true;
+            break;
+        }
+    }
+    if (!known && s_count < 8)
+    {
+        s_seen[s_count++] = handle;
+        // No object-table lookup here: this fires during early kernel init,
+        // where the table may not be safe to query yet (observed crash).
+        LOGF_WARNING("[Wait1] waiter LR={:#x} handle={:#x} r5={}",
+                     static_cast<uint32_t>(ctx.lr), handle, ctx.r5.u32);
+    }
+    __imp__sub_82A1A450(ctx, base);
 }
 
 // sub_82A12B60 — Sleep(1)-style helper; probe to identify the stuck poll
