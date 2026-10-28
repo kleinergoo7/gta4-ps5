@@ -474,7 +474,16 @@ extern "C" void sub_821EC3F0(PPCContext& context, uint8_t* base) {
 extern "C" void sub_82145420(PPCContext& context, uint8_t* base) {
   // The modern host composes this guard with its existing intro hook.
   const gta4::input::ContextTouchGameplayTransition transition;
+  static int s_calls = 0;
+  const bool log = ++s_calls <= 4;
+  if (log) {
+    REXLOG_WARN("[LOOP] sub_82145420 enter#{} r3={} r4={}", s_calls, context.r3.u32,
+                context.r4.u32);
+  }
   __imp__sub_82145420(context, base);
+  if (log) {
+    REXLOG_WARN("[LOOP] sub_82145420 exit#{} ret={}", s_calls, context.r3.u32);
+  }
 }
 #endif
 

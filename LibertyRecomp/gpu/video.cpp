@@ -10037,6 +10037,19 @@ PPC_FUNC_HOOK(sub_82A488B8)
     __imp__sub_82A488B8(ctx, base);
 }
 
+// sub_821411D8 — loop probe: log entry and returned value.
+PPC_FUNC_IMPL(__imp__sub_821411D8);
+PPC_FUNC_HOOK(sub_821411D8)
+{
+    static int s_calls = 0;
+    ++s_calls;
+    if (s_calls <= 4)
+        LOGF_WARNING("[LOOP] sub_821411D8 enter#{}", s_calls);
+    __imp__sub_821411D8(ctx, base);
+    if (s_calls <= 4)
+        LOGF_WARNING("[LOOP] sub_821411D8 exit#{} ret={}", s_calls, ctx.r3.u32);
+}
+
 // sub_821412B8 — frame driver probe: log the first calls and their callers so
 // we can see when the game's frame loop stops (boot currently ends after 2
 // presents).
