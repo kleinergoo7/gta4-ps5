@@ -10275,12 +10275,34 @@ PPC_FUNC_HOOK(sub_82145968)
     static std::atomic<uint32_t> s_calls{0};
     uint32_t n = s_calls.fetch_add(1) + 1;
     uint8_t before = PPC_LOAD_U8(0x831D5348);
-    const uint32_t r31_before = ctx.r31.u32;
+    const uint32_t in_r3 = ctx.r3.u32;
+    const uint32_t in_r4 = ctx.r4.u32;
     __imp__sub_82145968(ctx, base);
     uint8_t after = PPC_LOAD_U8(0x831D5348);
     if (n <= 6)
-        LOGF_WARNING("[STREAM] sub_82145968 call#{} ready {} -> {} ctx.r31 {:#x} -> {:#x}", n,
-                     (unsigned)before, (unsigned)after, r31_before, ctx.r31.u32);
+    {
+        char sbuf[65];
+        for (int i = 0; i < 64; i++)
+        {
+            uint8_t c = PPC_LOAD_U8(ctx.r1.u32 + 288 + i);
+            sbuf[i] = (c >= 32 && c < 127) ? (char)c : 0;
+            if (!c) break;
+        }
+        sbuf[64] = 0;
+        const uint32_t g534B = PPC_LOAD_U8(0x831D534B);
+        const uint32_t g5349 = PPC_LOAD_U8(0x831D5349);
+        const uint32_t g4DD4 = PPC_LOAD_U32(0x831E4DD4);
+        uint32_t cnt = 0;
+        if (g4DD4)
+        {
+            cnt = PPC_LOAD_U16(g4DD4 + 328);
+        }
+        LOGF_WARNING("[STREAM] sub_82145968 call#{} ready {} -> {} in r3={:#x} r4={:#x} ret={:#x} stack288=\"{}\" rec+0={:#x} rec+8={:#x} rec+12={:#x} rec+16={:#x} g534B={} g5349={} tbl={:#x} cnt={}", n,
+                     (unsigned)before, (unsigned)after, in_r3, in_r4, ctx.r3.u32, sbuf,
+                     PPC_LOAD_U32(0x831D5498), PPC_LOAD_U32(0x831D5498 + 8),
+                     PPC_LOAD_U32(0x831D5498 + 12), PPC_LOAD_U32(0x831D5498 + 16),
+                     g534B, g5349, g4DD4, cnt);
+    }
 }
 
 // sub_821455B0 — gates the loader-start path inside sub_82145420 (only a

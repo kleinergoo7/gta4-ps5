@@ -526,6 +526,32 @@ The workaround was removed (policy: a workaround that does not move the wall is
 reverted, not extended). Current wall remains: `record[0].state` never leaves 1,
 so `ready` never clears.
 
+## Record writer bails on two boot-zeroed gates (measured)
+
+`sub_82145968` (the only writer of the title load record) returns 0 without
+writing. Entry/exit probe with guest reads gives:
+
+```
+in:  r3=0x1 (leftover), g534B=0, g5349=1, tbl=[0x831E4DD4]=0xD9137880, cnt=*(tbl+328)=0
+out: ret=0, rec+0=0x1770, rec+8=1, rest 0
+```
+
+Two gates, both zeroed by the boot path:
+
+1. `g534B (0x831D534B) == 0` — stored by `sub_82145420` from its `r4` arg.
+   Boot calls `sub_82145420(1,0)`, so the flag is 0 and the writer takes its
+   first early exit. Forcing it to 1 (reverted experiment) still returns 0.
+2. `cnt == 0` — `sub_821411D8` allocates the table (`tbl` non-null) but stores
+   `r30=0` as the entry count at `+328`. Nothing later fills it, so the writer
+   takes its second early exit.
+
+So the record is bare because the boot initialises its table with zero entries,
+not because the writer is broken. The filler of that table (`sub_82140748`,
+called from the same init) is the next unread code on this path.
+
+Note: an earlier probe read the table from the wrong base (`0x831D4DD4`,
+off by `0x10000`). Correct base is `0x831E4DD4` (`lis -31970 + 19924`).
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
