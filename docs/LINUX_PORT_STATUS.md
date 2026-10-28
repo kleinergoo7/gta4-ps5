@@ -302,6 +302,16 @@ waiting while the producer still pulses. Any fix that merely adds a signal would
 be a gate; the real fix is to have the dispatcher running before/with the submit
 loop.
 
+**Option (a) is not available — measured.** The manager object
+(`this=0xDB56D2B0`) has an intact vtable at `0x8200DD84`, and its per-frame
+update entries are slots 5, 6 and 8 (`0x82679DB8`, `0x82679F48`, `0x82679E50`).
+Probes on all three show **zero calls** in a whole run. So there is no guest
+call site to repair: nothing in this boot ever dispatches the manager's update.
+
+Consequence: the drive point must come from the port (option (b)), and it must
+be labelled as a workaround whose root cause is "runtime dispatcher unreachable
+because boot waits on a flag the loader can never clear".
+
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
 memory `watch` aborts the process (SIGABRT), and `break` stops the guest and

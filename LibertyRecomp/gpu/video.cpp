@@ -10116,6 +10116,43 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// Manager vtable slots 5/6/8 (0x82679DB8, 0x82679F48, 0x82679E50): are they
+// ever dispatched at all? If not, nothing drives the streaming manager.
+#define LOG_MANAGER_SLOT(fn, name)                       \
+    PPC_FUNC_IMPL(__imp__##fn);                          \
+    PPC_FUNC_HOOK(fn)                                    \
+    {                                                    \
+        static std::atomic<uint32_t> s_calls{0};         \
+        uint32_t n = s_calls.fetch_add(1) + 1;           \
+        if (n <= 4 || (n % 200) == 0)                    \
+            LOGF_WARNING("[MANAGER] " name "#{}", n);    \
+        __imp__##fn(ctx, base);                          \
+    }
+
+LOG_MANAGER_SLOT(sub_82679DB8, "slot5-update")
+LOG_MANAGER_SLOT(sub_82679F48, "slot6-update")
+LOG_MANAGER_SLOT(sub_82679E50, "slot8-update")
+#undef LOG_MANAGER_SLOT
+
+// sub_82678EB0 — title load-slot init. Capture `this` so the manager object and
+// its vtable can be inspected (option (a): find the update vfunc and its call
+// site, not add a pump).
+PPC_FUNC_IMPL(__imp__sub_82678EB0);
+PPC_FUNC_HOOK(sub_82678EB0)
+{
+    const uint32_t self = ctx.r3.u32;
+    LOGF_WARNING("[MANAGER] slot-init sub_82678EB0 this={:#x} lr={:#x}", self,
+                 static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82678EB0(ctx, base);
+    if (self)
+    {
+        const uint32_t vtable = PPC_LOAD_U32(self);
+        LOGF_WARNING("[MANAGER] object={:#x} vtable={:#x}", self, vtable);
+        for (uint32_t slot = 0; slot < 12; slot++)
+            LOGF_WARNING("[MANAGER]   slot[{}] = {:#x}", slot, PPC_LOAD_U32(vtable + slot * 4));
+    }
+}
+
 // sub_82849860 — semaphore release wrapper (NtReleaseSemaphore(handle,1,0)).
 // Log the caller LR (who signals) and the handle, to pair it with the waiter.
 PPC_FUNC_IMPL(__imp__sub_82849860);
@@ -10127,17 +10164,6 @@ PPC_FUNC_HOOK(sub_82849860)
         LOGF_WARNING("[SEMREL] release#{} caller_lr={:#x} handle={:#x}", n,
                      static_cast<uint32_t>(ctx.lr), ctx.r3.u32);
     __imp__sub_82849860(ctx, base);
-}
-
-// Title-level in-flight loader probes (docs §8): slot init and load issue.
-PPC_FUNC_IMPL(__imp__sub_82678EB0);
-PPC_FUNC_HOOK(sub_82678EB0)
-{
-    static std::atomic<uint32_t> s_calls{0};
-    uint32_t n = s_calls.fetch_add(1) + 1;
-    LOGF_WARNING("[TITLELOAD] slot-init sub_82678EB0 call#{} lr={:#x}", n,
-                 static_cast<uint32_t>(ctx.lr));
-    __imp__sub_82678EB0(ctx, base);
 }
 
 PPC_FUNC_IMPL(__imp__sub_826793F0);
