@@ -9475,9 +9475,12 @@ PPC_FUNC_HOOK(sub_828BEC78)
     // dimension registers (observed: 2190205016x1). On hardware the stale
     // values happened to be small; a 2 GB surface can never succeed, so fail
     // fast and let the caller fall back instead of aborting in VMA.
+    // Zero *outPtr too: the caller may use it without checking r3, and a
+    // stale stack value there would cascade into a wild dereference.
     if (width == 0 || height == 0 || width > 16384u || height > 16384u) {
         LOGF_WARNING("[CreateRAGERT] #{} rejecting insane {}x{} (uninit args?)",
                      s_count, width, height);
+        if (outPtr) PPC_STORE_U32(outPtr, 0);
         ctx.r3.s32 = -1;
         return;
     }
