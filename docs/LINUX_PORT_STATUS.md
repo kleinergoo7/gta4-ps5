@@ -105,6 +105,18 @@ Conclusion: the object exists, the notify method is vtable slot 0, and no code
 invokes it. The remaining question is purely: which dispatcher should call
 `obj->vtable[0]`.
 
+**Experiment: signal the work event manually.** `xeKeSetEvent(0x831D52F0)` from
+the watchdog at t>=10 s returns 1 and *does* wake the producer: thread `tid=20`
+moves from `LR=0x82190A28` to `LR=0x82190A84` and continues past the wait.
+Signalling it every 500 ms keeps waking it, but `presents` stays at 2 and
+`draws` at 6 — the producer wakes, finds an **empty work queue**, and parks
+again. So the missing notify is not the root cause by itself: **no work is
+being submitted**.
+
+That moves the wall upstream: the guest thread that submits render work
+(`828C5BA0 -> 821B3990 -> ... -> 828C15C8 -> 828C1228`) stops after two
+frames. The next question is why that dispatch loop stops looping.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in

@@ -31,6 +31,8 @@
 #include <kernel/function.h>
 #include <kernel/memory.h>
 #include <kernel/arena_guard.h>
+#include <rex/kernel/xboxkrnl/threading.h>
+#include <rex/system/xtypes.h>
 #include <kernel/heap.h>
 #include <file.h>
 #include <vector>
@@ -323,6 +325,20 @@ static void LibertyWatchdogLoop()
         fprintf(stderr, "[WATCHDOG] tick=%llu t=%.1fs threads=%zu\n",
                 (unsigned long long)tick, elapsed_s, threads.size());
         uint8_t* mem_base = g_memory.base;
+        if (mem_base && tick >= 20) {
+            // Experiment: the producer thread has been parked on this event
+            // since init and nothing ever signals it. Signal it every tick and
+            // see whether work (and therefore frames) resumes. Logged.
+            auto* eventPtr = reinterpret_cast<rex::system::X_KEVENT*>(
+                g_memory.Translate(0x831D52F0));
+            uint32_t result = rex::kernel::xboxkrnl::xeKeSetEvent(eventPtr, 1, 0);
+            if (tick <= 24 || (tick % 20) == 0) {
+                fprintf(stderr, "[EVSIGNAL] tick=%llu xeKeSetEvent(0x831D52F0) -> %u\n",
+                        (unsigned long long)tick, result);
+                fflush(stderr);
+            }
+        }
+
         if (mem_base && tick == 20) {
             // One-shot: find where the game stored the waker callback pointer
             // (0x82190488). Nothing calls it directly, so it must live in a
@@ -343,6 +359,29 @@ static void LibertyWatchdogLoop()
                         std::memcpy(&w, mem_base + o, 4);
                         fprintf(stderr, "[CBSCAN]   %+3d  0x%08X = 0x%08X\n",
                                 k, (unsigned)o, __builtin_bswap32(w));
+                    }
+                    // Wider window: RTTI / class-name pointers sit before the
+                    // vtable. Print any slot that looks like a guest pointer.
+                    for (int k = -64; k < -8; k++) {
+                        int64_t o = (int64_t)off + (int64_t)k * 4;
+                        if (o < 0x10000 || o + 4 > 0x100000000ll) continue;
+                        uint32_t w;
+                        std::memcpy(&w, mem_base + o, 4);
+                        uint32_t be = __builtin_bswap32(w);
+                        if (be >= 0x82000000u && be < 0x84000000u) {
+                            fprintf(stderr, "[CBSCAN]   pre %+3d 0x%08X = 0x%08X\n",
+                                    k, (unsigned)o, be);
+                            // Print printable bytes at the target, if any.
+                            if (be + 32 <= 0x100000000ull) {
+                                char text[33];
+                                for (int c = 0; c < 32; c++) {
+                                    uint8_t b = mem_base[be + c];
+                                    text[c] = (b >= 32 && b < 127) ? (char)b : '.';
+                                }
+                                text[32] = 0;
+                                fprintf(stderr, "[CBSCAN]        -> \"%s\"\n", text);
+                            }
+                        }
                     }
                     if (++found >= 2) break;
                 }
