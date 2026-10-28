@@ -578,6 +578,24 @@ This is the bottom of the record-writer branch: the wall is not the writer,
 the flag, or the table pointer — it is the missing table entries, whose
 producer has no reachable call site while `ready` stays 1.
 
+## Table appender unreachable while ready stays 1 (measured)
+
+`sub_82219918` runs once at boot, right after the second-table store. Probe:
+
+```
+sub_82219918 #1 tbl=0xD9137880 cnt=0
+```
+
+Count unchanged. Combined with the previous round (filler gets the first
+table, no literal `+328` store anywhere else), the producer of the second
+table entries has no reachable call site while `ready` stays 1. The
+record-writer branch is fully mapped and dry: writer healthy, flag zero,
+table allocated, entries never appended.
+
+Next action is not another probe. It is a decompiler view of
+`sub_82219918` / `sub_82140748` to find the appender by computed address,
+or a comparison against a port that already boots (PS5 branch).
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

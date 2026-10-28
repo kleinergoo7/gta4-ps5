@@ -10437,6 +10437,22 @@ LOG_STAGE_PROBE(sub_8223DEE8)
 // Table filler for the load-record path: sub_821411D8 allocates tbl at
 // 0x831E4DD4 with count 0, then calls this to fill it. Log count after.
 LOG_STAGE_PROBE(sub_82140748)
+// Called right after the second-table store in sub_821411D8. If it appends
+// entries, the count at tbl+328 moves.
+PPC_FUNC_IMPL(__imp__sub_82219918);
+PPC_FUNC_HOOK(sub_82219918)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    __imp__sub_82219918(ctx, base);
+    if (n <= 4)
+    {
+        const uint32_t tbl = PPC_LOAD_U32(0x831E4DD4);
+        uint32_t cnt = 0;
+        if (tbl) cnt = PPC_LOAD_U16(tbl + 328);
+        LOGF_WARNING("[BOOTSTAGE] sub_82219918 #{} tbl={:#x} cnt={}", n, tbl, cnt);
+    }
+}
 
 // Case-3 entry, reached only when the dispatcher sits in stage 3.
 LOG_STAGE_PROBE(sub_8223CAD8)
