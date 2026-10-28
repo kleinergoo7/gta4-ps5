@@ -24,6 +24,7 @@ Fill in every `TODO` before relying on this file.
 - Generated, never edit or read in full: `gta4_recomp.86.cpp`.
 - Memory-safety workarounds belong in `kernel/memory`.
 - Upstream: `elripalda/main`.
+- Scope: Linux is the target, Windows is future scope. Keep fixes platform-neutral. PS5 paths (`ps5/`, `gta4-recomp/src/ps5/`) and PS4/Switch branches are read-only debt here — never "fix" them while working on Linux.
 
 ## Git rules
 

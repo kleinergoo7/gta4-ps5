@@ -1,5 +1,11 @@
 # Linux port status
 
+**Scope:** Linux is the target. Windows is future scope — keep fixes
+platform-neutral (no PS5-only assumptions, no per-platform `#ifdef` logic in
+shared files). The PS5 paths in this tree (`ps5/`,
+`glue/rexglue-sdk-main/gta4-recomp/src/ps5/`, PS4/Switch branches) are not
+maintained here: read-only debt, never "fix" them while working on Linux.
+
 State of the `linux-pc` branch (this repository's default branch) after the
 `1.0.2` rebase. Read together with `AGENTS.md`: that file holds the standing
 rules, this one holds where the port actually stands.
@@ -197,3 +203,20 @@ a NULL `Display` to the driver.
 - Upstreaming the Linux-safe parts (step 8).
 - Vendoring an OFL tooling font to supersede the font fallback.
 - Patching plume for `TRANSFER_SRC` to enable true pixel readback.
+
+## Upstream rexglue leads (not applied)
+
+Vendored `glue/rexglue-sdk-main` predates upstream `v0.10.0` (Aug 2026) for
+Linux. Cherry-pick only what a wall needs; a wholesale SDK upgrade is a
+separate task because this tree carries game-port changes on top.
+
+- `feat(ui)`: Wayland surface + `VK_KHR_wayland_surface`; `SDL_VULKAN` enabled
+  on Linux; SDL video driver picked at runtime. Removes the
+  `SDL_VIDEODRIVER=x11` requirement and the NULL-`Display` path.
+- `fix(filesystem)`: POSIX access mode instead of ORing `O_RDONLY`/`O_WRONLY`
+  (still broken here: `src/core/filesystem_posix.cpp:209-224`).
+- `fix(runtime)`: value-initialize thread context (same class as the
+  uninitialized-state boot crashes).
+- `fix(system)`: APC delivery via trap frame, preserving guest registers.
+- `fix(gpu)`: drop double-buffered page valid flags (candidate cause of frames
+  stopping after two presents).
