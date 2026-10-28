@@ -1162,10 +1162,46 @@ int main(int argc, char *argv[])
         constexpr uint32_t GPU_CONTEXT_GLOBAL = 0x83124900;
         uint32_t currentGOT = __builtin_bswap32(*reinterpret_cast<uint32_t*>(g_memory.base + GOT_GPU_CONTEXT));
         if (currentGOT != GPU_CONTEXT_GLOBAL) {
+            // The XEX image view is mapped read-only after LoadXexImage, so
+            // the GOT slot needs a brief writable window (game threads are
+            // not running yet, and protection is restored immediately after).
             uint32_t* gotEntry = reinterpret_cast<uint32_t*>(g_memory.base + GOT_GPU_CONTEXT);
-            *gotEntry = __builtin_bswap32(GPU_CONTEXT_GLOBAL);
-            DIAG_EMIT("[Main] GPU GOT 0x%08X -> 0x%08X (was 0x%08X)\n",
-                      GOT_GPU_CONTEXT, GPU_CONTEXT_GLOBAL, currentGOT);
+#if defined(_WIN32)
+            const uintptr_t pageMask = ~uintptr_t(4095);
+            const DWORD pageLen = 4096;
+#else
+            // Host page size is not always 4 KiB (ARM64 Linux/macOS use 16K/64K).
+            const long hostPage = sysconf(_SC_PAGESIZE);
+            const uintptr_t pageMask = ~uintptr_t(hostPage - 1);
+            const size_t pageLen = size_t(hostPage);
+#endif
+            const uintptr_t page = reinterpret_cast<uintptr_t>(gotEntry) & pageMask;
+#if defined(_WIN32)
+            DWORD oldProtect = 0;
+            const bool unprotected =
+                VirtualProtect(reinterpret_cast<void*>(page), pageLen, PAGE_READWRITE, &oldProtect) != 0;
+#else
+            const bool unprotected =
+                mprotect(reinterpret_cast<void*>(page), pageLen, PROT_READ | PROT_WRITE) == 0;
+#endif
+            if (!unprotected)
+            {
+                DIAG_EMIT("[Main] WARN: GPU GOT left unpatched (could not unprotect page)\n");
+            }
+            else
+            {
+                *gotEntry = __builtin_bswap32(GPU_CONTEXT_GLOBAL);
+#if defined(_WIN32)
+                DWORD ignoredProtect = 0;
+                VirtualProtect(reinterpret_cast<void*>(page), pageLen, oldProtect, &ignoredProtect);
+#else
+                // This page comes from the read-only XEX code view, so READ
+                // is its original state (the rw data regions are separate).
+                mprotect(reinterpret_cast<void*>(page), pageLen, PROT_READ);
+#endif
+                DIAG_EMIT("[Main] GPU GOT 0x%08X -> 0x%08X (was 0x%08X)\n",
+                          GOT_GPU_CONTEXT, GPU_CONTEXT_GLOBAL, currentGOT);
+            }
         } else {
             DIAG_EMIT("[Main] GPU GOT already correct (0x%08X)\n", GPU_CONTEXT_GLOBAL);
         }

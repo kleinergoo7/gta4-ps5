@@ -360,7 +360,18 @@ bool PostProcessRenderer::CreatePipelines() {
         LOG_WARNING("[PostProcessRenderer] Shaders not available - deferring pipeline creation");
         return true;
     }
-    
+
+    // shortcut: the postprocess HLSL (TAA/SMAA/FSR1/...) declares separate
+    // t/s registers that the shared bindless Vulkan layout does not provide
+    // (missing bindings + sampler/type mismatches; RADV SIGSEGVs creating
+    // them). The D3D12 path is unaffected. Until the Vulkan layouts are
+    // fixed, skip pipeline creation on Vulkan: every Apply* already
+    // null-guards its pipeline and falls back to passthrough.
+    if (GetCurrentBackend() == Backend::VULKAN) {
+        LOG_WARNING("[PostProcessRenderer] Vulkan postprocess layouts not wired - running without post FX");
+        return true;
+    }
+
     RenderGraphicsPipelineDesc desc;
     desc.pipelineLayout = m_pipelineLayout;
     desc.renderTargetCount = 1;
