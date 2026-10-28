@@ -10116,6 +10116,67 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// sub_82141F00 — boot init that should reach the streaming registry chain.
+PPC_FUNC_IMPL(__imp__sub_82141F00);
+PPC_FUNC_HOOK(sub_82141F00)
+{
+    LOGF_WARNING("[BOOT] sub_82141F00 enter lr={:#x}", static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82141F00(ctx, base);
+    LOGF_WARNING("[BOOT] sub_82141F00 exit ret={}", ctx.r3.u32);
+}
+
+// Registry-init call chain (see docs/GTA_IV_ASSET_STREAMING_SYSTEM.md):
+//   sub_821FD340 -> sub_82570BC0 -> sub_821CFE98 -> sub_822D3190
+// The chain never reaches registry init, so instrument its top links.
+PPC_FUNC_IMPL(__imp__sub_821FD340);
+PPC_FUNC_HOOK(sub_821FD340)
+{
+    LOGF_WARNING("[STREAM] sub_821FD340 enter lr={:#x}", static_cast<uint32_t>(ctx.lr));
+    __imp__sub_821FD340(ctx, base);
+    LOGF_WARNING("[STREAM] sub_821FD340 exit ret={}", ctx.r3.u32);
+}
+
+PPC_FUNC_IMPL(__imp__sub_82570BC0);
+PPC_FUNC_HOOK(sub_82570BC0)
+{
+    LOGF_WARNING("[STREAM] sub_82570BC0 enter lr={:#x}", static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82570BC0(ctx, base);
+    LOGF_WARNING("[STREAM] sub_82570BC0 exit ret={}", ctx.r3.u32);
+}
+
+// Streaming subsystem probes (see docs/GTA_IV_ASSET_STREAMING_SYSTEM.md):
+//   sub_822D30B8  subsystem init   (manager, title loader, disk cache)
+//   sub_822D3190  registry sizing/init
+//   sub_825120E8  request/dependency list insertion
+PPC_FUNC_IMPL(__imp__sub_822D30B8);
+PPC_FUNC_HOOK(sub_822D30B8)
+{
+    LOGF_WARNING("[STREAM] sub_822D30B8 (subsystem init) enter lr={:#x}",
+                 static_cast<uint32_t>(ctx.lr));
+    __imp__sub_822D30B8(ctx, base);
+    LOGF_WARNING("[STREAM] sub_822D30B8 exit ret={}", ctx.r3.u32);
+}
+
+PPC_FUNC_IMPL(__imp__sub_822D3190);
+PPC_FUNC_HOOK(sub_822D3190)
+{
+    LOGF_WARNING("[STREAM] sub_822D3190 (registry init) enter lr={:#x}",
+                 static_cast<uint32_t>(ctx.lr));
+    __imp__sub_822D3190(ctx, base);
+    LOGF_WARNING("[STREAM] sub_822D3190 exit ret={}", ctx.r3.u32);
+}
+
+PPC_FUNC_IMPL(__imp__sub_825120E8);
+PPC_FUNC_HOOK(sub_825120E8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 6 || (n % 500) == 0)
+        LOGF_WARNING("[STREAM] sub_825120E8 request#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_825120E8(ctx, base);
+}
+
 // sub_8218F4B8 / sub_82193290 — task-pool entry points (both take
 // &pool[21484]). Count calls to tell "nothing submits" from "submits fail".
 PPC_FUNC_IMPL(__imp__sub_8218F4B8);

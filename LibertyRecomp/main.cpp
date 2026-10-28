@@ -402,7 +402,7 @@ static void LibertyWatchdogLoop()
         if (mem_base && (tick % 10) == 0) {
             // Loader/world-init flags polled by the main thread's idle loop
             // (sub_821458B8 reads these two bytes).
-            fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u guard=%u gate=%d scene=0x%08X evt=0x%08X joblist=0x%08X jobs=%u/%u presents=%u draws=%u\n",
+            fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u guard=%u gate=%d scene=0x%08X evt=0x%08X joblist=0x%08X jobs=%u/%u reg=0x%08X presents=%u draws=%u\n",
                     elapsed_s,
                     (unsigned)mem_base[0x831D5335],
                     (unsigned)mem_base[0x831D5348],
@@ -413,6 +413,7 @@ static void LibertyWatchdogLoop()
                     __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D53EC)),
                     __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D53EC + 300)),
                     __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D53EC + 304)),
+                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x83032744)),
                     g_diagFramesPresented.load(std::memory_order_relaxed),
                     g_diagDraws.load(std::memory_order_relaxed));
         }

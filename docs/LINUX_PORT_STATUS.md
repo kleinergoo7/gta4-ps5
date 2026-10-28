@@ -156,6 +156,22 @@ it. The remaining work is to find GTA IV's task-submit API (one of the 88
 functions referencing `+21484`) and see why the streaming system never calls
 it — a task-graph RE job, not a single probe.
 
+**Pivot to streaming (documented subsystem).** Using
+`docs/GTA_IV_ASSET_STREAMING_SYSTEM.md`, probes show:
+
+- subsystem init `sub_822D30B8` **runs** and returns 1 (caller `LR=0x821D04B0`);
+- registry init `sub_822D3190` **never runs**, so `*(0x83032744)` (registry
+  pointer) stays `0x00000000` for the whole run — nothing can stream;
+- the registry chain is
+  `sub_82141F00 -> sub_821FD340 -> sub_82570BC0 -> sub_821CFE98 -> sub_822D3190`,
+  and **`sub_82141F00` is never called**;
+- `sub_82141F00` is invoked only from the boot state dispatcher
+  `sub_82142230` (five conditional call sites).
+
+So the wall is now: the boot state machine never selects the branch that
+initialises the streaming registry. Next step is the dispatch condition inside
+`sub_82142230`.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
