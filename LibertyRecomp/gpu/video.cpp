@@ -10116,6 +10116,19 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// sub_82143DC8 — record processor called from the loader 82144188 (3 sites).
+// Its progress decides whether record[idx].state ever reaches 3.
+PPC_FUNC_IMPL(__imp__sub_82143DC8);
+PPC_FUNC_HOOK(sub_82143DC8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 500) == 0)
+        LOGF_WARNING("[STREAM] sub_82143DC8 record#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82143DC8(ctx, base);
+}
+
 // sub_821458E0 — called at loc_82145578 immediately before the loader-flag
 // store. If control never comes back from it, the store is skipped despite the
 // branch being taken.
