@@ -10324,6 +10324,10 @@ PPC_FUNC_HOOK(sub_82142230)
 PPC_FUNC_IMPL(__imp__sub_822414E8);
 PPC_FUNC_HOOK(sub_822414E8)
 {
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 8 || (n % 200) == 0)
+        LOGF_WARNING("[BOOTSTAGE] > sub_822414E8 #{} (entry)", n);
     __imp__sub_822414E8(ctx, base);
     static std::atomic<int> s_last{-999};
     int now = static_cast<int>(ctx.r3.u32);
@@ -10355,6 +10359,29 @@ PPC_FUNC_HOOK(sub_821449B8)
                      static_cast<uint32_t>(ctx.lr));
     __imp__sub_821449B8(ctx, base);
 }
+
+// sub_82142230 is the boot stage machine: it loops on a stage number and
+// dispatches through a jump table. Stage 1 and 2 are selected by the return
+// value of the functions below. (The stage number itself lives in a host
+// register inside the recompiled body and is not visible to hooks.)
+#define LOG_STAGE_PROBE(fn)                                                  \
+    PPC_FUNC_IMPL(__imp__##fn);                                              \
+    PPC_FUNC_HOOK(fn)                                                        \
+    {                                                                        \
+        static std::atomic<uint32_t> s_calls{0};                             \
+        uint32_t n = s_calls.fetch_add(1) + 1;                               \
+        if (n <= 6 || (n % 200) == 0)                                        \
+            LOGF_WARNING("[BOOTSTAGE] > " #fn " #{} r3={:#x}", n,           \
+                         static_cast<uint32_t>(ctx.r3.u32));                 \
+        __imp__##fn(ctx, base);                                              \
+    }
+
+LOG_STAGE_PROBE(sub_8223DDA8)
+LOG_STAGE_PROBE(sub_8223DEE8)
+
+// Case-3 entry, reached only when the dispatcher sits in stage 3.
+LOG_STAGE_PROBE(sub_8223CAD8)
+#undef LOG_STAGE_PROBE
 
 // Registry-init call chain (see docs/GTA_IV_ASSET_STREAMING_SYSTEM.md):
 //   sub_821FD340 -> sub_82570BC0 -> sub_821CFE98 -> sub_822D3190
