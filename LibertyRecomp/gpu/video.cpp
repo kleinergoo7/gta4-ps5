@@ -9958,15 +9958,16 @@ PPC_FUNC_HOOK(sub_82A3DF60)
 {
 }
 
-// sub_827D5C80 — boot-crash probe: log inputs, call through.
-PPC_FUNC_IMPL(__imp__sub_827D5C80);
+// sub_827D5C80 — no-op (WORKAROUND). Probing showed 0xDD-pattern (freed or
+// never-initialized heap) inputs and a NULL vtable slot; the generated body
+// faults on a computed store. Both callers ignore the return value.
+// Logged; remove once the producer that should initialize this state or the
+// init ordering that leaves it dead is understood.
 PPC_FUNC_HOOK(sub_827D5C80)
 {
     static int s_count = 0;
-    if (++s_count <= 6)
-        LOGF_WARNING("[sub_827D5C80] #{} r3={:#x} r4={:#x} r5={:#x} r6={:#x}",
-                     s_count, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
-    __imp__sub_827D5C80(ctx, base);
+    if (++s_count <= 4)
+        LOGF_WARNING("[sub_827D5C80] no-op (#{})", s_count);
 }
 
 // sub_82A488B8 — zero-object gate (WORKAROUND). Probing showed the input
@@ -9993,6 +9994,31 @@ PPC_FUNC_HOOK(sub_82A488B8)
         return;
     }
     __imp__sub_82A488B8(ctx, base);
+}
+
+// sub_82A12B60 — Sleep(1)-style helper; probe to identify the stuck poll
+// site: log distinct guest return addresses, then call through.
+PPC_FUNC_IMPL(__imp__sub_82A12B60);
+PPC_FUNC_HOOK(sub_82A12B60)
+{
+    static int s_count = 0;
+    static uint32_t s_seen[16] = {};
+    bool known = false;
+    const uint32_t lr = static_cast<uint32_t>(ctx.lr);
+    for (int i = 0; i < 16; i++)
+    {
+        if (s_seen[i] == lr)
+        {
+            known = true;
+            break;
+        }
+    }
+    if (!known && s_count < 16)
+    {
+        s_seen[s_count++] = lr;
+        LOGF_WARNING("[sub_82A12B60] caller LR={:#x}", lr);
+    }
+    __imp__sub_82A12B60(ctx, base);
 }
 
 // sub_82A49458 — PM4 packet allocator/writer (no-op).
