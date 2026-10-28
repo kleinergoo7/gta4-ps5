@@ -96,6 +96,11 @@ Run all commands with `LC_ALL=C` so output is parseable (the dev machine uses a 
 - Configure: clean build dir (e.g. `build-linux/`; do not reuse stale `build-clang/`). Fresh configure from repo root with Ninja, Release, `LIBERTY_RECOMP_ARCH=x86-64-v3`, `LIBERTY_RECOMP_OPTIMIZE_TOOLS=OFF` (ON emits thin-LTO bitcode into tools libs that GNU ld cannot link into `librexruntime.so`), `CMAKE_CXX_SCAN_FOR_MODULES=OFF` (system `clang-scan-deps-23` defaults to `x86_64-suse-linux` and rejects the Brew-Clang PCH built for `x86_64-unknown-linux-gnu`), Brew Clang on PATH, vcpkg-free system/brew deps, ccache default (`CMAKE_C_COMPILER_LAUNCHER`/`CMAKE_CXX_COMPILER_LAUNCHER=ccache`, already default in prior `build-clang/` cache). Upstream preset alternative `cmake --preset linux-release` uses vcpkg + `toolchains/linux-clang.cmake` and diverges; prefer explicit clean dir above for the Linux port.
 - Build: from repo root `cmake --build build-linux --target LibertyRecomp` (verify binary path after build).
 - Run: launch the built `LibertyRecomp` binary with own Xbox 360 files via app installer; no game/firmware/keys in repo.
+- Run (software Vulkan, for RE/determinism): prefix with
+  `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`. Same boot wall
+  reproduces there, so it is not driver-specific; it is slower and the log
+  pipeline stalls after the first frame, so use RADV for long observation and
+  lavapipe to rule out driver behaviour.
 - Zig: `zig version` must print `0.16.0`, then `zig fmt .`, `zig build`, `zig build test` in `zig/`.
 
 ## Definition of Done

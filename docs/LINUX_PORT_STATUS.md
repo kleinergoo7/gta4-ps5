@@ -217,6 +217,14 @@ memory `watch` aborts the process (SIGABRT), and `break` stops the guest and
 hangs the run. Next attempt should drive `break`/step with a proper follow-up
 command sequence.
 
+**Lavapipe cross-check (not driver-specific).** Running with
+`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` boots and presents
+a frame, and every blocker reads exactly the same as on RADV:
+`reg=0x00000000`, `guard=0`, `jobs=0/0`, `evt=0x01000000` (unsignalled),
+`scene=0`. So the boot gate is guest logic, not Vulkan driver behaviour. Caveat:
+under lavapipe the log pipeline stalls after the first frame, so RADV stays the
+better backend for long observation; lavapipe is for ruling out the driver.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
