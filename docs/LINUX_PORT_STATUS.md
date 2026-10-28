@@ -199,6 +199,24 @@ So the deadlock is: boot waits for the initial async load to report state 3 →
 that load never runs because the task pool is never fed → and the pool is fed by
 the runtime that only starts after the wait exits.
 
+**Branch inside `sub_82145420` does not reach the flag store.** Reading the code,
+`sub_821455B0` returning non-zero should lead to the store at `loc_82145578` that
+sets `0x831D5345 = 1`. Instrumentation says otherwise:
+
+- `sub_821455B0` returns **1**;
+- `0x831D5348` reads **1** at that moment;
+- yet immediately after `sub_82145420` returns, `0x831D5345 = 0` and
+  `0x831D5348 = 1` (`[LOOP] ... exit#1 ret=0 f5345=0 f5348=1`).
+
+So the executed path is not the literal one, and the loader never starts. This
+needs single-stepping rather than more hooks.
+
+**Debugger notes** (the binary ships an interactive guest debugger):
+`vtable <object>` works, `threads` reports "No threads registered",
+memory `watch` aborts the process (SIGABRT), and `break` stops the guest and
+hangs the run. Next attempt should drive `break`/step with a proper follow-up
+command sequence.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in

@@ -482,7 +482,8 @@ extern "C" void sub_82145420(PPCContext& context, uint8_t* base) {
   }
   __imp__sub_82145420(context, base);
   if (log) {
-    REXLOG_WARN("[LOOP] sub_82145420 exit#{} ret={}", s_calls, context.r3.u32);
+    REXLOG_WARN("[LOOP] sub_82145420 exit#{} ret={} f5345={} f5348={}", s_calls,
+                context.r3.u32, (unsigned)base[0x831D5345], (unsigned)base[0x831D5348]);
   }
 }
 #endif

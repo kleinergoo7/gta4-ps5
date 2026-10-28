@@ -10116,6 +10116,21 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// sub_821455B0 — gates the loader-start path inside sub_82145420 (only a
+// non-zero return reaches the code that sets the 0x831D5345 "loading" byte).
+PPC_FUNC_IMPL(__imp__sub_821455B0);
+PPC_FUNC_HOOK(sub_821455B0)
+{
+    __imp__sub_821455B0(ctx, base);
+    static std::atomic<int> s_last{-999};
+    int now = static_cast<int>(ctx.r3.u32);
+    if (now != s_last.load(std::memory_order_relaxed))
+    {
+        s_last.store(now, std::memory_order_relaxed);
+        LOGF_WARNING("[LOADGATE] sub_821455B0 -> {}", now);
+    }
+}
+
 // sub_82142230 — boot dispatcher; only it can reach the streaming-registry
 // branch. Log entry so we know whether it runs at all.
 PPC_FUNC_IMPL(__imp__sub_82142230);
