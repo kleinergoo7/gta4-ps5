@@ -417,6 +417,21 @@ so no guest worker picks the record up. `sub_82144188` clears `ready` only at
 `state == 3`, which therefore never happens.
 
 `
+## Boot-stage dispatcher: two iterations, then nothing (measured)
+
+`sub_82142230` is not a flat init: it is a stage machine that loops on a stage
+number and dispatches through a jump table. Stage 0 reads `sub_822414E8`
+(returns **1**), which sets the stage to 1 and loops. Probes on the stage
+entries show exactly **two** iterations of the loop body (`sub_821428C8`
+completes both times, all of its callees return), and then no further entries:
+`sub_8223DDA8` (stage 1) and `sub_8223CAD8` (stage 3) are never called. The
+stage-7 branch at `loc_82142758`, the only place that calls `sub_82141F00` and
+therefore starts the streaming registry, is never reached.
+
+Consequence: clearing `ready` is not sufficient. Even with the wait loop
+short-circuited, the boot sequencer stops after two iterations instead of
+advancing to the stage that builds the registry.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
