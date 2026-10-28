@@ -92,6 +92,7 @@ REXCVAR_DECLARE(std::string, touch_controls);
 #include <rex/filesystem/vfs.h>
 #include <rex/filesystem/devices/host_path_device.h>
 #include <rex/kernel/crt/heap.h>
+#include <rex/kernel/init.h>
 #include <rex/chrono/clock.h>
 #include <rex/input/input_system.h>
 #if !REX_PLATFORM_CONSOLE
@@ -751,6 +752,10 @@ int main(int argc, char *argv[])
         // XBOXKRNL exports (XMACreateContext, XAudioRegisterRenderDriverClient,
         // etc.) handle all game audio calls with full Xenia-based implementations.
         rex::RuntimeConfig rexConfig;
+        // Load HLE kernel modules (xboxkrnl/xam/xbdm): registers export tables
+        // and kernel variable mappings. Without this, variable imports such as
+        // VdHSIOCalibrationLock are never patched and the guest hangs at boot.
+        rexConfig.kernel_init = rex::kernel::InitializeKernel;
 #if defined(LIBERTY_RECOMP_PS4)
         rexConfig.audio_factory = REX_AUDIO_BACKEND(rex::audio::orbis::OrbisAudioSystem);
 #elif REX_PLATFORM_NX
