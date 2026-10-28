@@ -67,6 +67,7 @@ REXCVAR_DECLARE(std::string, touch_controls);
 #if !REX_PLATFORM_CONSOLE
 #include <ui/installer_wizard.h>
 #include <ui/installer_native.h>
+#include <ui/installer_cli.h>
 #endif
 #include <ui/main_menu.h>
 #include <mod/mod_loader.h>
@@ -730,6 +731,9 @@ int main(int argc, char *argv[])
     const char *sdlVideoDriver = nullptr;
     std::string sdlVideoDriverStr;
     std::string diagnosticsCategories;
+    std::string installIso;
+    std::string installTu;
+    std::vector<std::string> installDlc;
 #if defined(GTA4_TOUCH_LEGACY_HOST)
     std::string touchControlsOverride;
 #endif
@@ -745,6 +749,9 @@ int main(int argc, char *argv[])
         cli.add_flag("--install-dlc",          forceDLCInstaller,          "Install DLC content from staged sources");
         cli.add_flag("--use-cwd",              useDefaultWorkingDirectory, "Use current working directory instead of executable path");
         cli.add_flag("--install-check",        forceInstallationCheck,     "Force re-validation of the installed game files");
+        cli.add_option("--install-iso", installIso, "Headless install: game ISO file or extracted folder");
+        cli.add_option("--install-tu", installTu, "Headless install: title update file or folder to scan");
+        cli.add_option("--install-dlc-path", installDlc, "Headless install: DLC package (repeatable)");
         cli.add_flag("--graphics-api-retry",   graphicsApiRetry,           "Retry with an alternative graphics API on failure");
         cli.add_flag("--skip-logos",           skipLogos,                  "Skip publisher/developer logos at startup");
         cli.add_option("--sdl-video-driver",   sdlVideoDriverStr,          "Override the SDL video driver");
@@ -868,6 +875,18 @@ int main(int argc, char *argv[])
         AutoInstallResult aiResult = AutoInstaller::Run(gamePath);
         if (!aiResult.errorMessage.empty())
             DIAG_EMIT("[AutoInstall] Warning: %s\n", aiResult.errorMessage.c_str());
+    }
+
+    // Headless install: no window, no dialogs. Exits the process.
+    // NOTE: _Exit, not return: namespace-scope render/pipeline threads are
+    // never joined, so a normal return aborts in their destructors.
+    // The wizard path exits the same way.
+    if (!installIso.empty())
+    {
+        int exitCode = InstallerCli::RunHeadlessInstall(gamePath, installIso, installTu, installDlc);
+        fflush(stdout);
+        fflush(stderr);
+        _Exit(exitCode);
     }
 #endif
 
