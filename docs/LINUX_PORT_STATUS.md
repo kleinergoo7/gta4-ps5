@@ -204,11 +204,20 @@ a NULL `Display` to the driver.
 - Vendoring an OFL tooling font to supersede the font fallback.
 - Patching plume for `TRANSFER_SRC` to enable true pixel readback.
 
-## Upstream rexglue leads (not applied)
+## Ported upstream rexglue fixes
 
-Vendored `glue/rexglue-sdk-main` predates upstream `v0.10.0` (Aug 2026) for
-Linux. Cherry-pick only what a wall needs; a wholesale SDK upgrade is a
-separate task because this tree carries game-port changes on top.
+Vendored `glue/rexglue-sdk-main` predates upstream `v0.10.0` (Aug 2026).
+Cherry-picked, platform-neutral, no oracle change so far:
+
+- `ff43ff6b` — APCs delivered with guest context save/restore
+  (`src/system/xthread.cpp`).
+- `263a125b` — thread context value-initialized so `PPCContext` defaults apply
+  (`include/rex/system/thread_state.h`, `src/system/thread_state.cpp`).
+- `0bd1fd55` — POSIX access mode selected instead of ORing
+  `O_RDONLY`/`O_WRONLY`; failed `pread`/`pwrite` report zero bytes; no forced
+  `O_APPEND` (`src/core/filesystem_posix.cpp`).
+
+## Upstream rexglue leads (not applied)
 
 - `feat(ui)`: Wayland surface + `VK_KHR_wayland_surface`; `SDL_VULKAN` enabled
   on Linux; SDL video driver picked at runtime. Removes the
@@ -219,4 +228,6 @@ separate task because this tree carries game-port changes on top.
   uninitialized-state boot crashes).
 - `fix(system)`: APC delivery via trap frame, preserving guest registers.
 - `fix(gpu)`: drop double-buffered page valid flags (candidate cause of frames
-  stopping after two presents).
+  stopping after two presents). Our `src/graphics/shared_memory.cpp` still has
+  the pre-patch design; the change is ~140 lines, deferred until a wall needs
+  it.
