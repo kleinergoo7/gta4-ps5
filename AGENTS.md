@@ -83,6 +83,7 @@ A workaround hides a bug; it does not fix it.
 
 - Fix the root cause. If you cannot, add a workaround that follows the workaround policy above and open a note for the root cause.
 - Fail loudly. Do not swallow errors, add silent fallbacks, clamp or zero bad values without logging, or widen a guard to make a crash go away.
+- Every failure path logs the reason (file, address, size where relevant) or hands back an error the caller reports. A bare `return false`/`return nullptr` with no log is a bug. Check with `tools/check_loud_failures.sh` (advisory; `--strict` for CI).
 - Do not "fix" a crash by committing more memory, skipping the draw, or ignoring a null. First find out why it is null or uninitialized.
 - Make bugs reproducible before changing code: a test, a log line, or exact run steps.
 - Never delete or weaken a test, assert, or log to get a green result.

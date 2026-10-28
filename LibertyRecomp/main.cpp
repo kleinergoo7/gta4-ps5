@@ -313,33 +313,56 @@ extern std::atomic<uint32_t> g_diagDraws;
 
 // Safe guest reads for diagnostics: the arena is sparse, so reading an
 // uncommitted page faults (and would fire the arena guard, perturbing the run).
-// Consult /proc/self/maps first and never touch an unreadable page.
-static bool GuestRangeReadable(uint32_t guest, uint32_t len)
+// Consult /proc/self/maps first and never touch an unreadable page. An
+// unreadable page is reported once per address and returns a sentinel, never a
+// silently invented value.
+static bool GuestRangeReadable(uint32_t guest, uint32_t len, bool* out_unmapped)
 {
     uint8_t* base = g_memory.base;
     if (!base) return false;
     const uintptr_t target = reinterpret_cast<uintptr_t>(base) + guest;
     FILE* maps = std::fopen("/proc/self/maps", "r");
-    if (!maps) return false;
+    if (!maps) {
+        static std::atomic<int> s_maps_fail{0};
+        if (s_maps_fail.fetch_add(1) < 3)
+            fprintf(stderr, "[DIAG-READ] cannot open /proc/self/maps; guest reads unavailable\n");
+        if (out_unmapped) *out_unmapped = false;
+        return false;
+    }
     char line[512];
     bool ok = false;
+    bool mapped = false;
     while (std::fgets(line, sizeof(line), maps)) {
         unsigned long a = 0, b = 0;
         char perms[8] = {};
         if (std::sscanf(line, "%lx-%lx %7s", &a, &b, perms) == 3) {
             if (target >= a && target + len <= b) {
+                mapped = true;
                 ok = (perms[0] == 'r');
                 break;
             }
         }
     }
     std::fclose(maps);
+    if (out_unmapped) *out_unmapped = !mapped;
     return ok;
+}
+
+static void ReportUnreadableGuest(uint32_t guest, bool unmapped)
+{
+    static std::atomic<int> s_count{0};
+    if (s_count.fetch_add(1) < 8)
+        fprintf(stderr, "[DIAG-READ] guest 0x%08X %s; returning sentinel\n", guest,
+                unmapped ? "is not mapped" : "is mapped but not readable");
 }
 
 static uint32_t SafeU32(uint32_t guest)
 {
-    if (!GuestRangeReadable(guest, 4)) return 0xFFFFFFFFu;
+    bool unmapped = false;
+    if (!GuestRangeReadable(guest, 4, &unmapped)) {
+        ReportUnreadableGuest(guest, unmapped);
+        return 0xFFFFFFFFu;
+    }
     uint32_t raw;
     std::memcpy(&raw, g_memory.base + guest, 4);
     return __builtin_bswap32(raw);
@@ -347,7 +370,11 @@ static uint32_t SafeU32(uint32_t guest)
 
 static uint8_t SafeU8(uint32_t guest)
 {
-    if (!GuestRangeReadable(guest, 1)) return 0xFFu;
+    bool unmapped = false;
+    if (!GuestRangeReadable(guest, 1, &unmapped)) {
+        ReportUnreadableGuest(guest, unmapped);
+        return 0xFFu;
+    }
     return g_memory.base[guest];
 }
 

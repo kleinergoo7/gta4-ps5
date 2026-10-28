@@ -1,5 +1,6 @@
 #include "installer.h"
 #include <functional>
+#include <os/logger.h>
 #include "shader_converter.h"
 #include "iso_extractor.h"
 #include "rpf_extractor.h"
@@ -119,6 +120,8 @@ static std::unique_ptr<VirtualFileSystem> createFileSystemFromPath(const std::fi
                 return DirectoryFileSystem::create(extractedPath);
             }
         }
+        LOGF_WARNING("[Installer] zip '{}' extracted to '{}' but no filesystem could be created",
+                     fromPath(path), fromPath(extractedPath));
         return nullptr;
     }
     
@@ -130,12 +133,13 @@ static std::unique_ptr<VirtualFileSystem> createFileSystemFromPath(const std::fi
     {
         return ISOFileSystem::create(path);
     }
-    else if (std::filesystem::is_directory(path))
-    {
+    else if (std::filesystem::is_directory(path))    {
         return DirectoryFileSystem::create(path);
     }
     else
     {
+        LOGF_WARNING("[Installer] unsupported source '{}': not XContent, not .iso, not a directory",
+                     fromPath(path));
         return nullptr;
     }
 }
@@ -368,6 +372,8 @@ static bool fillDLCSource(DLC dlc, Installer::DLCSource &dlcSource)
         dlcSource.targetSubDirectory = TBOGTDirectory;
         return true;
     default:
+        LOGF_WARNING("[Installer] DLC lookup for unknown DLC enum value {}",
+                     static_cast<int>(dlc));
         return false;
     }
 }
@@ -448,8 +454,17 @@ bool Installer::checkGameInstall(const std::filesystem::path &baseDirectory, std
 {
     modulePath = baseDirectory / GameDirectory / GameExecutableFile;
 
-    if (!std::filesystem::exists(modulePath))
+    std::error_code ec;
+    if (!std::filesystem::exists(modulePath, ec))
+    {
+        // Loud: this decides whether the boot runs the installer wizard, so a
+        // silent false here changes the whole startup path.
+        if (ec)
+            LOGF_WARNING("[Installer] cannot stat '{}': {}", modulePath.string(), ec.message());
+        else
+            LOGF_WARNING("[Installer] game not installed: '{}' is missing", modulePath.string());
         return false;
+    }
 
     return true;
 }

@@ -673,6 +673,7 @@ build-codegen/
 
 # Root-level scripts and logs (local dev only)
 *.sh
+!tools/check_loud_failures.sh
 *.py
 /tools/*.py
 !glue/rexglue-sdk-main/gta4-recomp/tools/derive_draw_distance_hooks.py
