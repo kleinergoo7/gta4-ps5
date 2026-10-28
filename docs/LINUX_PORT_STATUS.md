@@ -364,16 +364,59 @@ faults inside plume, so the alarm is content-level (draw stream), not RGB.
 
 ## Reproduce
 
+All runs go through weston (project policy):
+
 ```
 cmake --build build-linux --target LibertyRecomp
-SDL_VIDEODRIVER=x11 ./build-linux/LibertyRecomp/LibertyRecomp --diagnostics \
-  > /tmp/boot.log 2>&1
+tools/run_weston.sh --diagnostics > /tmp/boot.log 2>&1
 ```
 
-`SDL_VIDEODRIVER=x11` is required on a Wayland session: SDL opens a Wayland
-window, the X11 display property is NULL, and plume's Xlib surface path passes
-a NULL `Display` to the driver.
+`tools/run_weston.sh` keeps one long-lived weston nested in the outer X11
+display (`DISPLAY=:1` by default), runs it with `--xwayland`, reads the inner
+display number from the weston log and runs the game with
+`SDL_VIDEODRIVER=x11` on that display. Only the game is killed; weston stays
+up. The headless weston backend is wrong: it exposes no DRI3 and Mesa then
+refuses to present (`No DRI3 support detected - required for presentation`).
+`SDL_VIDEODRIVER=x11` is still required: SDL on a Wayland session opens a
+Wayland window, the X11 display property is NULL, and plume's Xlib surface path
+passes a NULL `Display` to the driver.
 
+## Manager pump experiment: disproved (measured)
+
+The streaming manager object is `this=0xDB56D2B0` with vtable `0x8200DD84`.
+Its per-frame entries are slots 5/6/8 (`0x82679DB8`, `0x82679F48`,
+`0x82679E50`), and none is ever dispatched. Driving them by hand from the
+`sub_82144188` hook (off-by-default flag, since removed) gives:
+
+| slot | result |
+|---|---|
+| 8 `82679E50` | SIGSEGV inside `sub_825132D0` (job-pool alloc) |
+| 5 `82679DB8` | SIGSEGV, same path (`82679DB8 -> 82679B98 -> 82513F10 -> 825132D0`) |
+| 6 `82679F48` | safe but inert: 3 pumps, then no further calls; state/ready unchanged |
+
+Cause: the streaming pool global `0x82A9AA7C` is **zero for the whole run**
+(`p0`, `p16`, `p56` all 0 measured every 5 s). The pool is never constructed,
+so the manager cannot be pumped at all. The subsystem chain that would build it
+(`sub_82141F00 -> sub_821FD340 -> sub_82570BC0 -> ...`) is called **only** from
+`sub_82142230`, which never runs. Pumping is therefore not a viable drive point.
+
+## Record state: armed once, never advanced (measured)
+
+A hardware watchpoint on `record[0].state` (`0x1831D54A0`, guest base
+`0x100000000`) over a whole run records **exactly one write**:
+
+```
+state 0 -> 1, backtrace:
+  sub_82145968 <- sub_82145420 <- sub_82140000
+```
+
+`sub_82145420` is the boot mode setter: it arms the initial load by setting
+`loader_active`, `ready` and `record[0].state = 1`, then the main thread parks
+in `sub_82140088`. Nothing in the rest of the run ever writes the record again,
+so no guest worker picks the record up. `sub_82144188` clears `ready` only at
+`state == 3`, which therefore never happens.
+
+`
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

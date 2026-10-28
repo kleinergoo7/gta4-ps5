@@ -315,6 +315,7 @@ extern std::atomic<uint32_t> g_diagDraws;
 // exit so the post-wait dispatcher can be studied. Off by default.
 static std::atomic<bool> g_experimentClearReady{false};
 
+
 // Safe guest reads for diagnostics: the arena is sparse, so reading an
 // uncommitted page faults (and would fire the arena guard, perturbing the run).
 // Consult /proc/self/maps first and never touch an unreadable page. An
@@ -512,6 +513,12 @@ static void LibertyWatchdogLoop()
         if (mem_base && (tick % 10) == 0) {
             // Loader/world-init flags polled by the main thread's idle loop
             // (sub_821458B8 reads these two bytes).
+            fprintf(stderr, "[POOL] t=%.1fs base=0x%08X p0=0x%08X p16=0x%08X p56=0x%08X\n",
+                    elapsed_s,
+                    (unsigned)0x82A9AA7Cu,
+                    SafeU32(0x82A9AA7Cu),
+                    SafeU32(0x82A9AA7Cu + 16),
+                    SafeU32(0x82A9AA7Cu + 56));
             fprintf(stderr, "[LOADFLAGS] t=%.1fs loader_active=%u ready=%u gate=%d scene=0x%08X evt=0x%08X joblist=0x%08X jobs=%u/%u reg=0x%08X loadidx=%u loadstate=%u presents=%u draws=%u\n",
                     elapsed_s,
                     (unsigned)SafeU8(0x831D5335),

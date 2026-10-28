@@ -10062,6 +10062,7 @@ PPC_FUNC_HOOK(sub_82144188)
     if (n <= 4 || (n % 300) == 0)
         LOGF_WARNING("[SUBMIT] sub_82144188 call#{} lr={:#x}", n,
                      static_cast<uint32_t>(ctx.lr));
+
     __imp__sub_82144188(ctx, base);
 }
 
@@ -10073,6 +10074,7 @@ PPC_FUNC_HOOK(sub_821B5B20)
     if (n <= 4 || (n % 300) == 0)
         LOGF_WARNING("[SUBMIT] sub_821B5B20 call#{} lr={:#x}", n,
                      static_cast<uint32_t>(ctx.lr));
+
     __imp__sub_821B5B20(ctx, base);
 }
 
@@ -10339,6 +10341,19 @@ PPC_FUNC_HOOK(sub_82141F00)
     LOGF_WARNING("[BOOT] sub_82141F00 enter lr={:#x}", static_cast<uint32_t>(ctx.lr));
     __imp__sub_82141F00(ctx, base);
     LOGF_WARNING("[BOOT] sub_82141F00 exit ret={}", ctx.r3.u32);
+}
+
+// sub_82145420 (mode setter) calls this when it arms the initial load. It is
+// the first candidate for "code that issues the initial load that clears ready".
+PPC_FUNC_IMPL(__imp__sub_821449B8);
+PPC_FUNC_HOOK(sub_821449B8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 200) == 0)
+        LOGF_WARNING("[BOOT] sub_821449B8 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_821449B8(ctx, base);
 }
 
 // Registry-init call chain (see docs/GTA_IV_ASSET_STREAMING_SYSTEM.md):
