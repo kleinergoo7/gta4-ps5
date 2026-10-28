@@ -10037,6 +10037,20 @@ PPC_FUNC_HOOK(sub_82A488B8)
     __imp__sub_82A488B8(ctx, base);
 }
 
+// sub_821904B8 — event waker: it calls KeSetEvent on the work event
+// (0x831D52F0) at 0x82190550. Probe whether it is ever called after init and
+// from where.
+PPC_FUNC_IMPL(__imp__sub_821904B8);
+PPC_FUNC_HOOK(sub_821904B8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 8 || (n % 500) == 0)
+        LOGF_WARNING("[WAKER] sub_821904B8 call#{} lr={:#x} r3={:#x}",
+                     n, static_cast<uint32_t>(ctx.lr), ctx.r3.u32);
+    __imp__sub_821904B8(ctx, base);
+}
+
 // sub_82A12F50 — NtReleaseSemaphore wrapper probe: log which handles are
 // actually released, so we can tell a missing producer from a stalled one.
 PPC_FUNC_IMPL(__imp__sub_82A12F50);

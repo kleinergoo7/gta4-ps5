@@ -323,6 +323,25 @@ static void LibertyWatchdogLoop()
         fprintf(stderr, "[WATCHDOG] tick=%llu t=%.1fs threads=%zu\n",
                 (unsigned long long)tick, elapsed_s, threads.size());
         uint8_t* mem_base = g_memory.base;
+        if (mem_base && tick == 20) {
+            // One-shot: find where the game stored the waker callback pointer
+            // (0x82190488). Nothing calls it directly, so it must live in a
+            // data structure that some dispatcher reads.
+            const uint32_t needle = 0x82190488u;
+            int found = 0;
+            for (uint64_t off = 0x10000; off + 4 <= 0x100000000ull; off += 4) {
+                uint32_t v;
+                std::memcpy(&v, mem_base + off, 4);
+                if (__builtin_bswap32(v) == needle) {
+                    fprintf(stderr, "[CBSCAN] 0x82190488 stored at guest 0x%08X\n",
+                            (unsigned)off);
+                    if (++found >= 8) break;
+                }
+            }
+            fprintf(stderr, "[CBSCAN] done, %d hit(s)\n", found);
+            fflush(stderr);
+        }
+
         if (mem_base && (tick % 10) == 0) {
             // Loader/world-init flags polled by the main thread's idle loop
             // (sub_821458B8 reads these two bytes).

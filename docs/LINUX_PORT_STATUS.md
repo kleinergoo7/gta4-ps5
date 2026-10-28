@@ -75,6 +75,21 @@ only during the init window and to other handles (`F800003C`, `F8000CC8`,
 Next lead: find who signals event `0x831D52F0` — i.e. which guest code path was
 expected to call `KeSetEvent` on it after the frontend finishes loading.
 
+**Waker is never called.** The only external `KeSetEvent` on that event is at
+`0x82190550` inside `sub_821904B8`; a 30 s run shows it is **never invoked at
+all** (hook counter 0). Its only direct caller `sub_82190488` is also never
+called directly. The address `0x82190488` is stored at two places in guest
+memory: `0x820BE4C0` and `0x821089D0` (plus their `+0x10000000` mirrors), i.e.
+it is only reachable as a **callback/vtable entry**, and no dispatcher reads it
+in this run.
+
+So the chain is: callback `0x82190488` → `sub_821904B8` → `KeSetEvent`
+(`0x831D52F0`) → producer thread wakes → jobs flow → frames. The callback is
+never invoked, which is why everything downstream sleeps.
+
+Next lead: identify the table at `0x820BE4C0` (dump its slots and find which
+virtual method index holds `0x82190488`) and the code that should dispatch it.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
