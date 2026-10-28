@@ -1,6 +1,8 @@
 #include "rpf_extractor.h"
 #include "thread_pool.h"
 
+#include <os/logger.h>
+
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -63,6 +65,14 @@ namespace RpfExtractor
         std::string fullPath;   // Built during tree traversal
     };
     
+    // Loud failure helper: RPF failures are silent no-ops otherwise, which is
+    // exactly what hid the archive-extraction problem during bring-up.
+    static bool Fail(const char* what)
+    {
+        LOGF_ERROR("[RPF] {}", what);
+        return false;
+    }
+
     // =========================================================================
     // AES-256-ECB decryption (16 rounds like SparkIV)
     // =========================================================================
@@ -73,6 +83,8 @@ namespace RpfExtractor
     {
         if (key.size() != 32 || data.empty())
         {
+            LOGF_ERROR("[RPF] AES key must be 32 bytes (got {}) and data must be non-empty (got {})",
+                       key.size(), data.size());
             return false;
         }
         
@@ -89,7 +101,7 @@ namespace RpfExtractor
         
         if (BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, nullptr, 0) != 0)
         {
-            return false;
+            return Fail("BCryptOpenAlgorithmProvider failed");
         }
         
         // Set ECB mode
@@ -97,7 +109,7 @@ namespace RpfExtractor
             (PUCHAR)BCRYPT_CHAIN_MODE_ECB, sizeof(BCRYPT_CHAIN_MODE_ECB), 0) != 0)
         {
             BCryptCloseAlgorithmProvider(hAlg, 0);
-            return false;
+            return Fail("BCryptSetProperty(ECB) failed");
         }
         
         // Create key
@@ -105,7 +117,7 @@ namespace RpfExtractor
             (PUCHAR)key.data(), (ULONG)key.size(), 0) != 0)
         {
             BCryptCloseAlgorithmProvider(hAlg, 0);
-            return false;
+            return Fail("BCryptGenerateSymmetricKey failed");
         }
         
         // Decrypt 16 times (like SparkIV)
@@ -117,6 +129,7 @@ namespace RpfExtractor
             {
                 BCryptDestroyKey(hKey);
                 BCryptCloseAlgorithmProvider(hAlg, 0);
+                LOGF_ERROR("[RPF] BCryptDecrypt failed on round {}", round);
                 return false;
             }
         }
@@ -126,7 +139,7 @@ namespace RpfExtractor
         return true;
 #elif defined(__ANDROID__)
         // Android: RPF decryption not supported — game data is pre-extracted.
-        (void)data; (void)key; (void)dataLen;
+        LOGF_ERROR("[RPF] RPF decryption is not supported on Android");
         return false;
 #elif defined(__linux__)
         // OpenSSL EVP - decrypt 16 times like SparkIV (raw ECB, no padding)
@@ -135,7 +148,7 @@ namespace RpfExtractor
             EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
             if (!ctx)
             {
-                return false;
+                return Fail("EVP_CIPHER_CTX_new failed");
             }
             int outLen = 0;
             bool roundOk =
@@ -147,6 +160,7 @@ namespace RpfExtractor
             EVP_CIPHER_CTX_free(ctx);
             if (!roundOk)
             {
+                LOGF_ERROR("[RPF] OpenSSL AES-256-ECB decrypt failed on round {}", round);
                 return false;
             }
         }
@@ -168,6 +182,7 @@ namespace RpfExtractor
             
             if (status != kCCSuccess)
             {
+                LOGF_ERROR("[RPF] CommonCrypto AES decrypt failed: {}", (int)status);
                 return false;
             }
         }
@@ -194,6 +209,7 @@ namespace RpfExtractor
         // Use -MAX_WBITS for raw deflate (no zlib/gzip header)
         if (inflateInit2(&stream, -MAX_WBITS) != Z_OK)
         {
+            LOGF_ERROR("[RPF] inflateInit2 failed (raw deflate), expected size {}", expectedSize);
             return {};
         }
         
@@ -202,6 +218,8 @@ namespace RpfExtractor
         
         if (result != Z_STREAM_END)
         {
+            LOGF_ERROR("[RPF] inflate failed: zlib result {} (expected {} bytes, got {})",
+                       result, expectedSize, stream.total_out);
             return {};
         }
         
@@ -217,14 +235,14 @@ namespace RpfExtractor
     {
         if (!std::filesystem::exists(path) || !std::filesystem::is_regular_file(path))
         {
-            return false;
+            return Fail("not an existing regular file");
         }
         
         std::string ext = path.extension().string();
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext != ".rpf")
         {
-            return false;
+            return Fail("extension is not .rpf");
         }
         
         RpfHeader header;
@@ -236,6 +254,7 @@ namespace RpfExtractor
         std::ifstream file(path, std::ios::binary);
         if (!file)
         {
+            LOGF_ERROR("[RPF] cannot open '{}'", path.string());
             return false;
         }
         
@@ -247,6 +266,7 @@ namespace RpfExtractor
         
         if (!file)
         {
+            LOGF_ERROR("[RPF] short read of header in '{}'", path.string());
             return false;
         }
         
@@ -263,6 +283,7 @@ namespace RpfExtractor
         RpfHeader header;
         if (!ReadHeader(path, header))
         {
+            LOGF_ERROR("[RPF] cannot read header of '{}'", path.string());
             return false;
         }
         return header.encrypted != 0;
@@ -273,6 +294,7 @@ namespace RpfExtractor
         std::ifstream file(keyPath, std::ios::binary);
         if (!file)
         {
+            LOGF_ERROR("[RPF] cannot open AES key '{}'", keyPath.string());
             return false;
         }
         
@@ -287,6 +309,8 @@ namespace RpfExtractor
         std::vector<uint8_t>& key)
     {
         // Placeholder - rely on shipped aes_key.bin
+        LOGF_ERROR("[RPF] extracting the AES key from '{}' is not implemented; supply aes_key.bin",
+                   exePath.string());
         return false;
     }
     
@@ -742,6 +766,7 @@ namespace RpfExtractor
     // SparkCLI functions - deprecated, we use native extraction now
     bool IsSparkCliAvailable()
     {
+        LOGF_WARNING("[RPF] SparkCLI is deprecated and unavailable; using native extraction");
         return false;
     }
     

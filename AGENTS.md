@@ -84,6 +84,7 @@ A workaround hides a bug; it does not fix it.
 - Fix the root cause. If you cannot, add a workaround that follows the workaround policy above and open a note for the root cause.
 - Fail loudly. Do not swallow errors, add silent fallbacks, clamp or zero bad values without logging, or widen a guard to make a crash go away.
 - Every failure path logs the reason (file, address, size where relevant) or hands back an error the caller reports. A bare `return false`/`return nullptr` with no log is a bug. Check with `tools/check_loud_failures.sh` (advisory; `--strict` for CI).
+- **Debt is drained on the fly.** Touching a file means fixing its silent failure paths in the same change, or leaving `TODO(loud): <reason>` beside each one you cannot fix yet. `tools/check_loud_failures.sh --ratchet` fails if any file's count rises; `--update-baseline` records a decrease.
 - **Errors propagate.** A function that can fail returns a status (`bool`, `std::expected`, `optional`, error code, `X_STATUS`). Callers must handle it: abort the operation, surface it to the user, or re-raise with added context. Logging alone is not handling.
 - Never discard a failure: no `(void)call()`, no ignoring a `[[nodiscard]]` result, no `catch` that logs and then returns success.
 - A caller may only continue past a failure if continuing is a deliberate `WORKAROUND` — labelled, logged, with a note naming the root cause.
