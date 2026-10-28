@@ -10297,6 +10297,21 @@ PPC_FUNC_HOOK(sub_821455B0)
     }
 }
 
+// sub_828497D8 = NtWaitForSingleObject(handle, -1, null). Pairing every wait
+// with its result against the release log shows whether the frame semaphore is
+// never signalled or signalled and lost.
+PPC_FUNC_IMPL(__imp__sub_828497D8);
+PPC_FUNC_HOOK(sub_828497D8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    const uint32_t handle = ctx.r3.u32;
+    __imp__sub_828497D8(ctx, base);
+    if (n <= 40 || (n % 100) == 0)
+        LOGF_WARNING("[WAIT] #{} handle={:#x} ret={}", n, handle,
+                     static_cast<uint32_t>(ctx.r3.u32));
+}
+
 // Guest thread start: sub_82A21600 takes the entry point in r3 and the
 // argument in r4, then calls the entry through ctr. Logging r3 here gives the
 // real entry for every guest thread (the watchdog only sees the trampoline).

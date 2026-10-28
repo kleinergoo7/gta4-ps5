@@ -491,6 +491,24 @@ watchdog cannot see (it only ever observes the trampoline `0x82849940`).
 `0x821B6F18` is a thread entry, so the frame-complete pulse depends on a thread
 that submits once and exits. No other guest thread releases `0xF8000044`.
 
+## The frame signal is not lost — it is not produced (measured)
+
+`sub_828497D8` is `NtWaitForSingleObject(handle, -1, null)`; its result is
+`1` when the wait is satisfied. Hooking it and pairing with the release log
+gives, for handle `0xF8000044`:
+
+- **4 waits satisfied** (`ret=1`), then the 5th blocks (a blocked wait never
+  returns, so it never logs);
+- **2 releases**, both from `sub_821B5B20` at startup.
+
+So the semaphore is created with an initial count that covers the first waits,
+and after `initial + 2` waits it runs dry. Nothing is swallowed and the object
+identity is right; the per-frame release simply never happens.
+
+The port *does* raise vblanks: `GraphicsSystem` runs a `GPU VSync` worker that
+calls `MarkVblank()` at the guest refresh rate. Those vblanks do not drive the
+guest path that releases `0xF8000044`.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
