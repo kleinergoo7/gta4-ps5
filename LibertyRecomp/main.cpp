@@ -66,6 +66,7 @@ REXCVAR_DECLARE(std::string, touch_controls);
 #include <ui/game_window.h>
 #if !REX_PLATFORM_CONSOLE
 #include <ui/installer_wizard.h>
+#include <ui/installer_native.h>
 #endif
 #include <ui/main_menu.h>
 #include <mod/mod_loader.h>
@@ -1315,7 +1316,9 @@ int main(int argc, char *argv[])
         if (!Video::CreateHostDevice(sdlVideoDriver, graphicsApiRetry))
             ShowVideoBackendErrorAndExit();
 
-        if (!InstallerWizard::Run(GetGamePath(), isGameInstalled && forceDLCInstaller))
+        // Native setup on desktop (windowed, no ImGui pages); the ImGui
+        // wizard remains for console platforms.
+        if (!InstallerNative::Run(GetGamePath(), isGameInstalled && forceDLCInstaller))
         {
             DIAG_EMIT("[EXIT-TRACE] main.cpp:675 calling _Exit\n");
             std::_Exit(0);

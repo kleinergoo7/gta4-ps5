@@ -407,6 +407,7 @@ if (NOT (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4"   OR CMAKE_SYSTEM_NAME ST
          LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "switch" OR CMAKE_SYSTEM_NAME STREQUAL "Switch" OR
          ANDROID))
     list(APPEND LIBERTY_RECOMP_UI_CXX_SOURCES "ui/installer_wizard.cpp")
+    list(APPEND LIBERTY_RECOMP_UI_CXX_SOURCES "ui/installer_native.cpp")
 endif()
 
 # Console builds (PS4/Switch) are full embedded archives — no installer, no update checker.
