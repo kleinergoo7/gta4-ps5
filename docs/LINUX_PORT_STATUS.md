@@ -454,9 +454,20 @@ no second release, so the dispatcher parks forever on the frame-complete wait,
 the boot stage machine never advances past stage 2, `ready` never clears and the
 streaming registry is never built.
 
-`sub_821B6F18` has **no direct caller** in the recompiled corpus — it is reached
-through a guest function pointer. Restoring that per-frame dispatch is the
-behavioural fix this wall needs; it is not a flag or a gate.
+`sub_821B6F18` has **no direct caller** in the recompiled corpus. A gdb
+breakpoint settles what it is: its frame is
+
+```
+sub_821B6F18 <- sub_82849940 <- sub_82A21600 <- XThread::Execute
+```
+
+`sub_82849940` is the guest thread trampoline, so `sub_821B6F18` is a **thread
+entry point**, not a frame callback and not a table-dispatched command. That
+thread performs one submit and exits, which is why the frame-complete semaphore
+is pulsed exactly twice and never again.
+
+The 0x82109320 region that also contains `sub_821B6F18` is therefore not its
+dispatcher; the pairs there are unrelated to this wall.
 
 ## Known issues not yet fixed
 

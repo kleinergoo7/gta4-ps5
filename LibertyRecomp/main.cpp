@@ -508,8 +508,9 @@ static void LibertyWatchdogLoop()
             }
             fprintf(stderr, "[CBSCAN] done, %d hit(s), %d live object(s)\n", found, objects);
 
-            // Where does the game store the per-frame submit wrapper
-            // sub_821B6F18? It has no direct caller, so a data table holds it.
+            // Where is the submit thread entry sub_821B6F18 referenced? It has
+            // no direct caller in the corpus; it is a thread entry (recorded in
+            // docs/LINUX_PORT_STATUS.md).
             const uint32_t submitNeedle = 0x821B6F18u;
             int submitHits = 0;
             for (uint64_t off = 0x10000; off + 4 <= 0x100000000ull; off += 4) {
@@ -526,10 +527,6 @@ static void LibertyWatchdogLoop()
                             __builtin_bswap32(w));
                 }
                 if (++submitHits >= 4) break;
-            }
-            // Static table that holds the submit wrapper: dump it whole.
-            for (uint32_t a = 0x82109320u; a < 0x821093A0u; a += 4) {
-                fprintf(stderr, "[SUBSCAN] table 0x%08X = 0x%08X\n", a, SafeU32(a));
             }
             fprintf(stderr, "[SUBSCAN] done, %d hit(s)\n", submitHits);
             fflush(stderr);
