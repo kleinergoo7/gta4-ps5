@@ -10037,6 +10037,18 @@ PPC_FUNC_HOOK(sub_82A488B8)
     __imp__sub_82A488B8(ctx, base);
 }
 
+// sub_821412B8 — frame driver probe: log the first calls and their callers so
+// we can see when the game's frame loop stops (boot currently ends after 2
+// presents).
+PPC_FUNC_IMPL(__imp__sub_821412B8);
+PPC_FUNC_HOOK(sub_821412B8)
+{
+    static int s_count = 0;
+    if (++s_count <= 10 || (s_count % 200) == 0)
+        LOGF_WARNING("[FRAMEDRV] call#{} lr={:#x}", s_count, static_cast<uint32_t>(ctx.lr));
+    __imp__sub_821412B8(ctx, base);
+}
+
 // sub_82A1A450 — WaitForSingleObject wrapper probe: identify what the render
 // thread parks on. Logs each distinct handle with its object type, then calls
 // through. (Import alias 82A74F64 is not hookable; this guest caller is.)
