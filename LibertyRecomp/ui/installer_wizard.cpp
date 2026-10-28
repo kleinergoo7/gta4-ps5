@@ -1006,6 +1006,14 @@ static void PickerThreadProcess()
     if (result == NFD_OKAY)
     {
         bool pathsConverted = ConvertPathSet(pathSet, g_currentPickerResults);
+        std::printf("[Picker] NFD_OKAY, converted=%d, count=%zu\n", (int)pathsConverted, g_currentPickerResults.size());
+        for (const auto& pickedPath : g_currentPickerResults)
+            std::printf("[Picker] picked: %s\n", pickedPath.string().c_str());
+        fflush(stdout);
+        if (!pathsConverted)
+        {
+            g_currentPickerErrorMessage = "Could not read the selected paths from the file dialog.";
+        }
         NFD_PathSet_Free(pathSet);
     }
     else if (result == NFD_ERROR)
