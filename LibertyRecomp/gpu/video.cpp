@@ -10116,6 +10116,35 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// sub_82142230 — boot dispatcher; only it can reach the streaming-registry
+// branch. Log entry so we know whether it runs at all.
+PPC_FUNC_IMPL(__imp__sub_82142230);
+PPC_FUNC_HOOK(sub_82142230)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4 || (n % 300) == 0)
+        LOGF_WARNING("[DISPATCH] sub_82142230 call#{} lr={:#x} r3={}", n,
+                     static_cast<uint32_t>(ctx.lr), ctx.r3.u32);
+    __imp__sub_82142230(ctx, base);
+}
+
+// sub_822414E8 — state getter driving the boot dispatcher sub_82142230
+// (that dispatcher only reaches the streaming-registry branch when its state
+// is 7). Log the returned state when it changes.
+PPC_FUNC_IMPL(__imp__sub_822414E8);
+PPC_FUNC_HOOK(sub_822414E8)
+{
+    __imp__sub_822414E8(ctx, base);
+    static std::atomic<int> s_last{-999};
+    int now = static_cast<int>(ctx.r3.u32);
+    if (now != s_last.load(std::memory_order_relaxed))
+    {
+        s_last.store(now, std::memory_order_relaxed);
+        LOGF_WARNING("[STATE] sub_822414E8 -> {}", now);
+    }
+}
+
 // sub_82141F00 — boot init that should reach the streaming registry chain.
 PPC_FUNC_IMPL(__imp__sub_82141F00);
 PPC_FUNC_HOOK(sub_82141F00)

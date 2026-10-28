@@ -172,6 +172,33 @@ So the wall is now: the boot state machine never selects the branch that
 initialises the streaming registry. Next step is the dispatch condition inside
 `sub_82142230`.
 
+**Root gate found.** `sub_82142230` (the real runtime/init that reaches
+streaming) is called **only** from `sub_82140088`, after its wait loop exits:
+
+```
+sub_82140088:
+  while (sub_821458B8() != 0) { Sleep(1); }   // <-- main thread is parked here
+  sub_82142230();                             // real init, never reached
+```
+
+`sub_821458B8` returns `byte[0x831D5348]` when `byte[0x831D5335] != 0`. Both bytes
+read **1** for the whole run, so the loop never exits and nothing downstream —
+streaming registry included — ever initialises.
+
+`0x831D5348` has only three writers, all in the 8214xxxx boot family:
+
+- `sub_82142230` (never runs),
+- `sub_82144188` (runs continuously from the render thread, `LR=0x821B5BF4`),
+- `sub_82145420` (runs once, is a mode-setter).
+
+In `sub_82144188` the clear is guarded by: a float comparison, the flag itself
+being non-zero, **and a job/state field at `(r9+r30+8) == 3`**. That field never
+reaches 3, so the flag is never cleared.
+
+So the deadlock is: boot waits for the initial async load to report state 3 →
+that load never runs because the task pool is never fed → and the pool is fed by
+the runtime that only starts after the wait exits.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in
