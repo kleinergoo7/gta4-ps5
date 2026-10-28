@@ -90,6 +90,21 @@ never invoked, which is why everything downstream sleeps.
 Next lead: identify the table at `0x820BE4C0` (dump its slots and find which
 virtual method index holds `0x82190488`) and the code that should dispatch it.
 
+**Table characterised.** `0x820BE4C0` is a **vtable**, slot 0 = `0x82190488`
+(neighbours: `0x8218FB70`, `0x8218FB90`, `0x8218FD60`, `0x829335B0`,
+`0x82192460`, `0x821924B8`, `0x8218FF28`, `0x8218FE98`). Three live objects
+carry that vptr (`0xB998C42C`, `0xD998C42C`, `0xF998B42C` — the same physical
+object through guest RAM mirrors), so the object **is** constructed.
+
+Constructors: `sub_821903B8` writes both `0x820BE4C0` and `0x820BE4DC` into the
+new object, and `sub_821904B8` (the function that calls `KeSetEvent` on the
+work event) also writes this vptr — so it is the object's **slot 0 method**
+("notify / start"), not a standalone waker.
+
+Conclusion: the object exists, the notify method is vtable slot 0, and no code
+invokes it. The remaining question is purely: which dispatcher should call
+`obj->vtable[0]`.
+
 ## Boot-unblocking gates (all `WORKAROUND`, all logged)
 
 Each one unblocks a deterministic host SIGSEGV during boot. All are in

@@ -335,10 +335,31 @@ static void LibertyWatchdogLoop()
                 if (__builtin_bswap32(v) == needle) {
                     fprintf(stderr, "[CBSCAN] 0x82190488 stored at guest 0x%08X\n",
                             (unsigned)off);
-                    if (++found >= 8) break;
+                    // Dump the surrounding table: 8 words before and after.
+                    for (int k = -8; k <= 8; k++) {
+                        int64_t o = (int64_t)off + (int64_t)k * 4;
+                        if (o < 0x10000 || o + 4 > 0x100000000ll) continue;
+                        uint32_t w;
+                        std::memcpy(&w, mem_base + o, 4);
+                        fprintf(stderr, "[CBSCAN]   %+3d  0x%08X = 0x%08X\n",
+                                k, (unsigned)o, __builtin_bswap32(w));
+                    }
+                    if (++found >= 2) break;
                 }
             }
-            fprintf(stderr, "[CBSCAN] done, %d hit(s)\n", found);
+            // Live objects whose vtable pointer is 0x820BE4C0.
+            const uint32_t vtableNeedle = 0x820BE4C0u;
+            int objects = 0;
+            for (uint64_t off = 0x10000; off + 4 <= 0x100000000ull; off += 4) {
+                uint32_t v;
+                std::memcpy(&v, mem_base + off, 4);
+                if (__builtin_bswap32(v) == vtableNeedle) {
+                    fprintf(stderr, "[VTSCAN] object vptr 0x820BE4C0 at guest 0x%08X\n",
+                            (unsigned)off);
+                    if (++objects >= 8) break;
+                }
+            }
+            fprintf(stderr, "[CBSCAN] done, %d hit(s), %d live object(s)\n", found, objects);
             fflush(stderr);
         }
 
