@@ -9587,6 +9587,19 @@ GUEST_FUNCTION_HOOK(sub_82A47E28, UnlockVertexBuffer);
 // NOTE(GTAIV): Hook the game's D3D Present wrapper.
 // Render path: sub_82856F08 → sub_828529B0 → sub_828507F8 → sub_82A467D8 → Video::Present
 // 
+// sub_828D9768 — no-op (boot unblocker, WORKAROUND).
+// Probing showed valid inputs but a NULL vtable slot (slot=0x0) with the
+// target region 0xDD-filled: freed-or-never-initialized game heap read
+// through an unset function pointer (guest fault at 0x20). Both callers
+// ignore the return value. Logged; remove once the HLE gap that leaves
+// the slot empty is understood.
+PPC_FUNC_HOOK(sub_828D9768)
+{
+    static int s_count = 0;
+    if (++s_count <= 4)
+        LOGF_WARNING("[sub_828D9768] no-op (#{})", s_count);
+}
+
 // CRITICAL: The original sub_82A467D8 increments device[16544] (FrameCounter), which
 // sub_828507F8 uses for frame pacing: "if (submitted - presented >= 2) skip Present".
 // Since GUEST_FUNCTION_HOOK replaces the function entirely, we must increment the
@@ -9943,6 +9956,78 @@ PPC_FUNC_HOOK(sub_82A49CB0) { }
 // level DrawPrimitive/DrawPrimitiveUP hooks.
 PPC_FUNC_HOOK(sub_82A3DF60)
 {
+}
+
+// sub_827D5C80 — boot-crash probe: log inputs, call through.
+PPC_FUNC_IMPL(__imp__sub_827D5C80);
+PPC_FUNC_HOOK(sub_827D5C80)
+{
+    static int s_count = 0;
+    if (++s_count <= 6)
+        LOGF_WARNING("[sub_827D5C80] #{} r3={:#x} r4={:#x} r5={:#x} r6={:#x}",
+                     s_count, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32, ctx.r6.u32);
+    __imp__sub_827D5C80(ctx, base);
+}
+
+// sub_82A488B8 — zero-object gate (WORKAROUND). Probing showed the input
+// object arrives fully zeroed (+0..+20 read 0) during init, and the generated
+// body derives a store address from it that lands on guest 0 (host SIGSEGV,
+// declined by the arena guard as a null-page fault). The caller ignores the
+// return value, so decline loudly with 0. Logged; remove once the producer
+// that should initialize this object is understood.
+PPC_FUNC_IMPL(__imp__sub_82A488B8);
+PPC_FUNC_HOOK(sub_82A488B8)
+{
+    static int s_count = 0;
+    uint32_t f0 = PPC_LOAD_U32(ctx.r3.u32 + 0);
+    uint32_t f4 = PPC_LOAD_U32(ctx.r3.u32 + 4);
+    uint32_t f8 = PPC_LOAD_U32(ctx.r3.u32 + 8);
+    uint32_t f12 = PPC_LOAD_U32(ctx.r3.u32 + 12);
+    uint32_t f16 = PPC_LOAD_U32(ctx.r3.u32 + 16);
+    uint32_t f20 = PPC_LOAD_U32(ctx.r3.u32 + 20);
+    if ((f0 | f4 | f8 | f12 | f16 | f20) == 0)
+    {
+        if (++s_count <= 8)
+            LOGF_WARNING("[sub_82A488B8] declining zero object (#{})", s_count);
+        ctx.r3.u32 = 0;
+        return;
+    }
+    __imp__sub_82A488B8(ctx, base);
+}
+
+// sub_82A49458 — PM4 packet allocator/writer (no-op).
+//
+// Companion to the 82A3DF60/82A49CB0 stubs: the stubbed ring/PM4 machinery
+// never fills the device+13232+16 buffer slot, so the generated body
+// dereferences NULL+10941 via sub_82A48B90 (host SIGSEGV, declined by the
+// arena guard as a null-page fault). The packet bytes go to a Xenos ring
+// Liberty never consumes; host rendering is driven by the high-level hooks.
+// The caller (sub_82A3EDA8) proceeds unconditionally after the call.
+PPC_FUNC_HOOK(sub_82A49458)
+{
+    static int s_count = 0;
+    if (++s_count <= 4)
+        LOGF_WARNING("[sub_82A49458] no-op (#{})", s_count);
+}
+
+// sub_82A48B90 — null-object gate (defense in depth for other callers).
+// The stubbed PM4 path (see above) can leave an object slot NULL while the
+// generated body reads r31+10941 unconditionally (guest fault at 0x2ABD,
+// declined by the arena guard). The function itself can return 0 and every
+// observed caller null-checks the result, so decline loudly with 0 instead
+// of crashing the host. Logged.
+PPC_FUNC_IMPL(__imp__sub_82A48B90);
+PPC_FUNC_HOOK(sub_82A48B90)
+{
+    if (ctx.r3.u32 == 0)
+    {
+        static int s_nullCount = 0;
+        if (++s_nullCount <= 8)
+            LOGF_WARNING("[sub_82A48B90] declining NULL object (#{})", s_nullCount);
+        ctx.r3.u32 = 0;
+        return;
+    }
+    __imp__sub_82A48B90(ctx, base);
 }
 
 // Command-list replay retains CPU-visible lifetime and dirty-state semantics,
