@@ -560,6 +560,44 @@ static void LibertyWatchdogLoop()
         }
 
         if (mem_base && (tick % 10) == 0) {
+            // Does anything at all write the title load record? A hardware
+            // watchpoint only sees CPU stores; this snapshot also catches DMA
+            // that lands in the same host mapping.
+            {
+                static uint8_t s_record[400];
+                static bool s_have_record = false;
+                uint8_t now[400];
+                for (int i = 0; i < 400; i++)
+                    now[i] = mem_base[0x831D5498u + i];
+                static bool s_dumped = false;
+                if (!s_dumped) {
+                    s_dumped = true;
+                    char ascii[49];
+                    for (int i = 0; i < 48; i++)
+                        ascii[i] = (now[i] >= 32 && now[i] < 127) ? (char)now[i] : '.';
+                    ascii[48] = 0;
+                    fprintf(stderr, "[RECORD] dump:");
+                    for (int i = 0; i < 48; i++) fprintf(stderr, " %02X", now[i]);
+                    fprintf(stderr, "  |%s|\n", ascii);
+                    for (int base = 48; base < 200; base += 16) {
+                        fprintf(stderr, "[RECORD] +%3d:", base);
+                        for (int i = 0; i < 16; i++) fprintf(stderr, " %02X", now[base + i]);
+                        fprintf(stderr, "\n");
+                    }
+                }
+                if (s_have_record) {
+                    int changes = 0;
+                    for (int i = 0; i < 400 && changes < 8; i++) {
+                        if (now[i] == s_record[i]) continue;
+                        fprintf(stderr, "[RECORD] byte +%d 0x%02X -> 0x%02X\n", i,
+                                s_record[i], now[i]);
+                        ++changes;
+                    }
+                }
+                std::memcpy(s_record, now, sizeof(now));
+                s_have_record = true;
+            }
+
             // Loader/world-init flags polled by the main thread's idle loop
             // (sub_821458B8 reads these two bytes).
             fprintf(stderr, "[POOL] t=%.1fs base=0x%08X p0=0x%08X p16=0x%08X p56=0x%08X\n",
