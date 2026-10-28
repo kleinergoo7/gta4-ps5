@@ -18,6 +18,9 @@ Fill in every `TODO` before relying on this file.
 
 - Third-party rules exist in `glue/rexglue-sdk-main/thirdparty/sdl3/AGENTS.md` and `o1heap/AGENTS.md`. They do not apply to this repo.
 - Port-relevant files: `video.cpp`, `main.cpp`, `createdevice_diag.cpp`, `draw_pool_watchpoint.cpp`.
+- Setup front ends: `ui/installer_cli.cpp` (headless), `ui/installer_native.cpp` (native dialogs), `ui/installer_wizard.cpp` (console/ImGui).
+- Memory workarounds: `kernel/arena_guard.cpp`.
+- Build/boot diagnostics: `[FRAME]`/`[LOADFLAGS]` watchdog output; see `docs/LINUX_PORT_STATUS.md` for the current wall and the gate list.
 - Generated, never edit or read in full: `gta4_recomp.86.cpp`.
 - Memory-safety workarounds belong in `kernel/memory`.
 - Upstream: `elripalda/main`.
