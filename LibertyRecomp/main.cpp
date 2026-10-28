@@ -315,7 +315,6 @@ extern std::atomic<uint32_t> g_diagDraws;
 // exit so the post-wait dispatcher can be studied. Off by default.
 static std::atomic<bool> g_experimentClearReady{false};
 
-
 // Safe guest reads for diagnostics: the arena is sparse, so reading an
 // uncommitted page faults (and would fire the arena guard, perturbing the run).
 // Consult /proc/self/maps first and never touch an unreadable page. An
@@ -535,6 +534,27 @@ static void LibertyWatchdogLoop()
                     fprintf(stderr, "[THREADBLK] 0x%08X +%d = 0x%08X\n", base, k * 4,
                             SafeU32(base + k * 4));
             }
+            // Is 0x82109320 a vtable base? A vptr stored in an object may point
+            // anywhere in the table, so scan for any word in the table range.
+            int rangeHits = 0;
+            for (uint64_t off = 0x10000; off + 4 <= 0x100000000ull; off += 4) {
+                uint32_t v;
+                std::memcpy(&v, mem_base + off, 4);
+                uint32_t be = __builtin_bswap32(v);
+                if (be < 0x82109100u || be >= 0x82109500u) continue;
+                fprintf(stderr, "[VPTSCAN] 0x%08X held at guest 0x%08X (slot %u)\n", be,
+                        (unsigned)off, (be - 0x82109200u) / 4);
+                for (int k = -3; k <= 5; k++) {
+                    int64_t o = (int64_t)off + (int64_t)k * 4;
+                    if (o < 0x10000 || o + 4 > 0x100000000ll) continue;
+                    uint32_t w;
+                    std::memcpy(&w, mem_base + o, 4);
+                    fprintf(stderr, "[VPTSCAN]   %+3d 0x%08X = 0x%08X\n", k, (unsigned)o,
+                            __builtin_bswap32(w));
+                }
+                if (++rangeHits >= 6) break;
+            }
+            fprintf(stderr, "[VPTSCAN] range hits=%d\n", rangeHits);
             fprintf(stderr, "[SUBSCAN] done, %d hit(s)\n", submitHits);
             fflush(stderr);
         }

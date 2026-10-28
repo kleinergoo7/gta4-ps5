@@ -509,6 +509,23 @@ The port *does* raise vblanks: `GraphicsSystem` runs a `GPU VSync` worker that
 calls `MarkVblank()` at the guest refresh rate. Those vblanks do not drive the
 guest path that releases `0xF8000044`.
 
+## Correction: the frame wait is downstream of `ready` (measured)
+
+Signalling `0xF8000044` from the present path (two releases, one per presented
+frame) changed **nothing**: `ready` stayed 1, `reg` stayed 0, the dispatcher
+`sub_82142230` was never entered (`sub_821428C8` never called), and only two
+presents ever happen, so at most two signals are produced.
+
+Why: the `sub_82142230 -> sub_821428C8 -> sub_821B5890 -> wait(0xF8000044)`
+chain measured earlier is only reachable **after** `ready` clears, which is a
+`--experiment-clear-ready` run. In a normal run the outer wait loop in
+`sub_82140088` still spins on `ready`, so the frame semaphore is not the current
+wall at all — it is the first wall after `ready`.
+
+The workaround was removed (policy: a workaround that does not move the wall is
+reverted, not extended). Current wall remains: `record[0].state` never leaves 1,
+so `ready` never clears.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

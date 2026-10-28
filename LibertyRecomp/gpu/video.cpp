@@ -3751,6 +3751,7 @@ void Video::Present()
 
     g_pendingWaitOnSwapChain = true;
 
+
     // Frame-signature alarm: log only when the frame's draw stream changes,
     // so "frozen" and "the screen changed" are distinguishable from the log.
     {
