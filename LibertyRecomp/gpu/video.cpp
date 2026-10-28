@@ -10116,6 +10116,73 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// Title-level in-flight loader probes (docs §8): slot init and load issue.
+PPC_FUNC_IMPL(__imp__sub_82678EB0);
+PPC_FUNC_HOOK(sub_82678EB0)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    LOGF_WARNING("[TITLELOAD] slot-init sub_82678EB0 call#{} lr={:#x}", n,
+                 static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82678EB0(ctx, base);
+}
+
+PPC_FUNC_IMPL(__imp__sub_826793F0);
+PPC_FUNC_HOOK(sub_826793F0)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 8 || (n % 50) == 0)
+        LOGF_WARNING("[TITLELOAD] issue sub_826793F0 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_826793F0(ctx, base);
+}
+
+// pgStreamer probes (docs/GTA_IV_ASSET_STREAMING_SYSTEM.md §9): is the queued
+// bulk-I/O layer initialised, opened, submitted to, and serviced at all?
+PPC_FUNC_IMPL(__imp__sub_8284CFD8);
+PPC_FUNC_HOOK(sub_8284CFD8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    LOGF_WARNING("[PGSTREAM] init sub_8284CFD8 call#{} lr={:#x}", n,
+                 static_cast<uint32_t>(ctx.lr));
+    __imp__sub_8284CFD8(ctx, base);
+}
+
+PPC_FUNC_IMPL(__imp__sub_8284CB80);
+PPC_FUNC_HOOK(sub_8284CB80)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 8 || (n % 200) == 0)
+        LOGF_WARNING("[PGSTREAM] Open sub_8284CB80 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_8284CB80(ctx, base);
+}
+
+PPC_FUNC_IMPL(__imp__sub_8284C888);
+PPC_FUNC_HOOK(sub_8284C888)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 8 || (n % 200) == 0)
+        LOGF_WARNING("[PGSTREAM] submit sub_8284C888 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_8284C888(ctx, base);
+}
+
+PPC_FUNC_IMPL(__imp__sub_8284BF50);
+PPC_FUNC_HOOK(sub_8284BF50)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 8 || (n % 200) == 0)
+        LOGF_WARNING("[PGSTREAM] worker sub_8284BF50 call#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_8284BF50(ctx, base);
+}
+
 // sub_82143DC8 — record processor called from the loader 82144188 (3 sites).
 // Its progress decides whether record[idx].state ever reaches 3.
 PPC_FUNC_IMPL(__imp__sub_82143DC8);

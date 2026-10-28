@@ -219,6 +219,25 @@ hex offsets in probes, never decimal offsets converted by hand.
 The only writer that can clear `ready` while the game runs is `sub_82144188`,
 guarded by `record[idx].state == 3`. That record stays at 1.
 
+**Decisive measurement (whole I/O stack is up, but idle).**
+
+| probe | result |
+|---|---|
+| `pgStreamer` init `sub_8284CFD8` | **runs** (1 call) |
+| `pgStreamer::Open` `sub_8284CB80` | runs (8+ calls, all at init) |
+| submit `sub_8284C888` | runs (8+ calls, all at init) |
+| worker `sub_8284BF50` | runs (8+ calls, all at init) |
+| title slot init `sub_82678EB0` | **runs once** (`LR=0x822D3168`) |
+| **title load issue `sub_826793F0`** | **never called (0)** |
+
+So the queued bulk-I/O layer works, the 8 title slots are initialised, and the
+one function that would *issue* a load is never invoked. Nothing can therefore
+advance a record to state 3, clear `ready`, or fetch the world.
+
+Note the slot-init caller `0x822D3168` sits in the registry-init region — the
+same chain (`sub_82141F00 → … → sub_822D3190`) that never runs. One missing
+boot call explains every idle subsystem measured so far.
+
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
 memory `watch` aborts the process (SIGABRT), and `break` stops the guest and
