@@ -238,6 +238,22 @@ Note the slot-init caller `0x822D3168` sits in the registry-init region — the
 same chain (`sub_82141F00 → … → sub_822D3190`) that never runs. One missing
 boot call explains every idle subsystem measured so far.
 
+**Why the registry chain cannot run before the wait loop.** `sub_82142230` has
+exactly one caller: `sub_82140088` line 141 — i.e. the statement *after* the
+wait loop. Its first call site is gated on `state == 7`
+(`cmpwi r29,7` at `0x821426F0`). So by construction the registry/streaming
+initialisation runs only after `ready` clears.
+
+That makes the initial load (the thing that must clear `ready`) a separate,
+earlier mechanism which our port never starts. Everything below it is verified
+working; the open question is now narrow and single:
+
+> **Which code issues the *initial* load that clears `ready` before the wait
+> loop exits, and why does it not run here?**
+
+Answering that needs control-flow reading of the loader with a decompiler
+(the `liberty-decomp`/Ghidra data is not in this checkout), not more probes.
+
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
 memory `watch` aborts the process (SIGABRT), and `break` stops the guest and
