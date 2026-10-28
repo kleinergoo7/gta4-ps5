@@ -55,6 +55,13 @@ struct ImGuiTextInterpData
 
 void InitImGuiUtils();
 
+// WORKAROUND (missing LibertyRecompResources: the committed font-atlas
+// snapshot has no Rodin): resolve a UI font by snapshot name, falling back
+// to the embedded default font with a log line instead of crashing on null.
+// Proper fix: vendor an OFL tooling font and extract Rodin from the user's
+// disc post-install; this helper is the seam that plugs into.
+ImFont* UIFont(const char* name);
+
 void SetGradient(const ImVec2& min, const ImVec2& max, ImU32 top, ImU32 bottom);
 void SetHorizontalGradient(const ImVec2& min, const ImVec2& max, ImU32 left, ImU32 right);
 void SetVerticalGradient(const ImVec2& min, const ImVec2& max, ImU32 top, ImU32 bottom);

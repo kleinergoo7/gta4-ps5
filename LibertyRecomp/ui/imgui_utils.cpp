@@ -30,11 +30,23 @@ std::unique_ptr<GuestTexture> g_upTexSelectArrow;
 std::unique_ptr<GuestTexture> g_upTexMainMenu1;
 std::unique_ptr<GuestTexture> g_upTexArrow;
 
+ImFont* UIFont(const char* name)
+{
+    // WORKAROUND: snapshot atlas may lack the named font when the private
+    // LibertyRecompResources tree is absent (committed snapshot is Proggy-only).
+    // Fall back to the embedded default font and log every trigger.
+    if (ImFont* font = ImFontAtlasSnapshot::GetFont(name)) return font;
+    LOGF_WARNING("WORKAROUND: font '{}' missing from atlas, using default font", name);
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    if (!atlas->Fonts.empty()) return atlas->Fonts[0];
+    return atlas->AddFontDefault();
+}
+
 void InitImGuiUtils()
 {
     // TODO: Replace with europa-grotesk after regenerating font atlas
-    g_pFntRodin = ImFontAtlasSnapshot::GetFont("FOT-RodinPro-DB.otf");
-    g_pFntNewRodin = ImFontAtlasSnapshot::GetFont("FOT-NewRodinPro-UB.otf");
+    g_pFntRodin = UIFont("FOT-RodinPro-DB.otf");
+    g_pFntNewRodin = UIFont("FOT-NewRodinPro-UB.otf");
 
 #ifdef LIBERTY_RECOMP_HAS_RESOURCES
     g_upTexButtonWindow = LOAD_ZSTD_TEXTURE(g_button_window);
