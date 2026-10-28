@@ -165,6 +165,9 @@ set(LIBERTY_RECOMP_KERNEL_CXX_SOURCES
     "kernel/heap.cpp"            # thin adapter over rexglue heap
     "kernel/memory.cpp"          # thin adapter — exposes g_memory with .base
                                  #   and .Translate(guest_addr) used by patches
+    "kernel/arena_guard.cpp"     # WORKAROUND: commit-on-demand for guard
+                                 #   pages hit via uninit stack slots (logs
+                                 #   every commit/decline; see header)
     "kernel/xdm.cpp"             # Liberty KernelObject table (g_kernelLock,
                                  #   LookupKernelObject...) — consumed by
                                  #   cpu/guest_thread; TODO migrate to rex
@@ -408,6 +411,7 @@ if (NOT (LIBERTY_RECOMP_TARGET_PLATFORM STREQUAL "ps4"   OR CMAKE_SYSTEM_NAME ST
          ANDROID))
     list(APPEND LIBERTY_RECOMP_UI_CXX_SOURCES "ui/installer_wizard.cpp")
     list(APPEND LIBERTY_RECOMP_UI_CXX_SOURCES "ui/installer_native.cpp")
+    list(APPEND LIBERTY_RECOMP_UI_CXX_SOURCES "ui/installer_cli.cpp")
 endif()
 
 # Console builds (PS4/Switch) are full embedded archives — no installer, no update checker.

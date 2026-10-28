@@ -9454,6 +9454,12 @@ GUEST_FUNCTION_HOOK(sub_82A44850, GTAIV_CreateTexture);
 
 PPC_FUNC_HOOK(sub_828BEC78)
 {
+    // WORKAROUND: stale-stack defense. Init code sometimes reaches here with
+    // uninitialized dimension registers (observed: 2190205016x1); on hardware
+    // the stale values happened to be small. A >16K surface can never
+    // succeed, so fail fast and let the caller fall back instead of aborting
+    // in VMA. Every rejection is logged; remove once the uninit args are
+    // root-caused (step 6).
     static int s_count = 0;
     ++s_count;
 
