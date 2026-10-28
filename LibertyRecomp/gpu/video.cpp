@@ -10116,6 +10116,51 @@ PPC_FUNC_HOOK(sub_82A12F50)
     __imp__sub_82A12F50(ctx, base);
 }
 
+// sub_821458E0 — called at loc_82145578 immediately before the loader-flag
+// store. If control never comes back from it, the store is skipped despite the
+// branch being taken.
+PPC_FUNC_IMPL(__imp__sub_821458E0);
+PPC_FUNC_HOOK(sub_821458E0)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 4)
+        LOGF_WARNING("[STREAM] sub_821458E0 enter#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_821458E0(ctx, base);
+    if (n <= 4)
+        LOGF_WARNING("[STREAM] sub_821458E0 exit#{} ret={}", n, ctx.r3.u32);
+}
+
+// sub_82144708 — the "other path" taken when the ready check fails. If it is
+// called, the 0x831D5348 test did not pass and the flag store was skipped.
+PPC_FUNC_IMPL(__imp__sub_82144708);
+PPC_FUNC_HOOK(sub_82144708)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    if (n <= 6)
+        LOGF_WARNING("[STREAM] sub_82144708 other-path#{} lr={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr));
+    __imp__sub_82144708(ctx, base);
+}
+
+// sub_82145968 — called immediately before the 0x831D5348 check that gates the
+// loader-start flag store. Log the byte before and after to see if it clears it.
+PPC_FUNC_IMPL(__imp__sub_82145968);
+PPC_FUNC_HOOK(sub_82145968)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    uint8_t before = PPC_LOAD_U8(0x831D5348);
+    const uint32_t r31_before = ctx.r31.u32;
+    __imp__sub_82145968(ctx, base);
+    uint8_t after = PPC_LOAD_U8(0x831D5348);
+    if (n <= 6)
+        LOGF_WARNING("[STREAM] sub_82145968 call#{} ready {} -> {} ctx.r31 {:#x} -> {:#x}", n,
+                     (unsigned)before, (unsigned)after, r31_before, ctx.r31.u32);
+}
+
 // sub_821455B0 — gates the loader-start path inside sub_82145420 (only a
 // non-zero return reaches the code that sets the 0x831D5345 "loading" byte).
 PPC_FUNC_IMPL(__imp__sub_821455B0);

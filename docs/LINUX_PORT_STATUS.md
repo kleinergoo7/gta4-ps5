@@ -36,7 +36,7 @@ The game boots but never reaches the menu.
   main thread has no frame loop; it ends up in the post-init wait loop
   `sub_82140088` (`KeDelayExecutionThread`).
 - `sub_82145420(1,0)` — the run entry called right after — **returns 0 after
-  ~38 ms**. Its early-out guard byte `0x831D5345` is 0, so it runs and then
+  ~38 ms**. Its early-out guard byte `0x831D5335` is 0 at that point, so it runs and then
   falls through to the plain epilogue: it is a mode-setter, not the frame loop.
 - The render thread (`821B5B20 -> 821C5BA0 -> 828C15C8`) parks on a semaphore
   (`0xF8001080`, `NtWaitForSingleObjectEx`) and is never woken.
@@ -199,17 +199,25 @@ So the deadlock is: boot waits for the initial async load to report state 3 →
 that load never runs because the task pool is never fed → and the pool is fed by
 the runtime that only starts after the wait exits.
 
-**Branch inside `sub_82145420` does not reach the flag store.** Reading the code,
-`sub_821455B0` returning non-zero should lead to the store at `loc_82145578` that
-sets `0x831D5345 = 1`. Instrumentation says otherwise:
+**Correction: there was no contradiction.** An earlier revision of this file
+claimed `sub_82145420` skipped the loader-flag store. That was an
+address-arithmetic error in the probe: `21304 = 0x5338`, so the store target is
+`-3(r31)` = **`0x831D5335`**, not `0x831D5345`. Measured correctly, the function
+sets `0x831D5335 = 1` (loader active) exactly as the code says, and it sets
+`ready` (`0x831D5348`) to 1. Lesson recorded because it cost a whole chase: use
+hex offsets in probes, never decimal offsets converted by hand.
 
-- `sub_821455B0` returns **1**;
-- `0x831D5348` reads **1** at that moment;
-- yet immediately after `sub_82145420` returns, `0x831D5345 = 0` and
-  `0x831D5348 = 1` (`[LOOP] ... exit#1 ret=0 f5345=0 f5348=1`).
+**Actual state machine (measured):**
 
-So the executed path is not the literal one, and the loader never starts. This
-needs single-stepping rather than more hooks.
+| byte | meaning | observed |
+|---|---|---|
+| `0x831D5335` | loader active, set by `sub_82145420` | **1** |
+| `0x831D5348` | `ready`, polled by `sub_821458B8` | **1** (never clears) |
+| `0x831D5340` | current load-record index | **0** |
+| `0x831D54A0` | `record[0].state` (`base 0x831D5498`, stride 400, field +8) | **1**, never 3 |
+
+The only writer that can clear `ready` while the game runs is `sub_82144188`,
+guarded by `record[idx].state == 3`. That record stays at 1.
 
 **Debugger notes** (the binary ships an interactive guest debugger):
 `vtable <object>` works, `threads` reports "No threads registered",
@@ -220,7 +228,7 @@ command sequence.
 **Lavapipe cross-check (not driver-specific).** Running with
 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json` boots and presents
 a frame, and every blocker reads exactly the same as on RADV:
-`reg=0x00000000`, `guard=0`, `jobs=0/0`, `evt=0x01000000` (unsignalled),
+`reg=0x00000000`, `loader_active=1`, `ready=1`, `jobs=0/0`, `evt` unsignalled,
 `scene=0`. So the boot gate is guest logic, not Vulkan driver behaviour. Caveat:
 under lavapipe the log pipeline stalls after the first frame, so RADV stays the
 better backend for long observation; lavapipe is for ruling out the driver.

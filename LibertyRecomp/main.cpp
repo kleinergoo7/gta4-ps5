@@ -469,11 +469,10 @@ static void LibertyWatchdogLoop()
         if (mem_base && (tick % 10) == 0) {
             // Loader/world-init flags polled by the main thread's idle loop
             // (sub_821458B8 reads these two bytes).
-            fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u guard=%u gate=%d scene=0x%08X evt=0x%08X joblist=0x%08X jobs=%u/%u reg=0x%08X presents=%u draws=%u\n",
+            fprintf(stderr, "[LOADFLAGS] t=%.1fs loader_active=%u ready=%u gate=%d scene=0x%08X evt=0x%08X joblist=0x%08X jobs=%u/%u reg=0x%08X loadidx=%u loadstate=%u presents=%u draws=%u\n",
                     elapsed_s,
                     (unsigned)SafeU8(0x831D5335),
                     (unsigned)SafeU8(0x831D5348),
-                    (unsigned)SafeU8(0x831D5345),
                     (int32_t)SafeU32(0x82B0B48C),
                     SafeU32(0x831C2458),
                     SafeU32(0x831D52F0),
@@ -481,6 +480,8 @@ static void LibertyWatchdogLoop()
                     SafeU32(0x831D53EC + 300),
                     SafeU32(0x831D53EC + 304),
                     SafeU32(0x83032744),
+                    SafeU32(0x831D5340),
+                    SafeU32(0x831D5498 + SafeU32(0x831D5340) * 400 + 8),
                     g_diagFramesPresented.load(std::memory_order_relaxed),
                     g_diagDraws.load(std::memory_order_relaxed));
         }

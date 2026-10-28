@@ -477,13 +477,16 @@ extern "C" void sub_82145420(PPCContext& context, uint8_t* base) {
   static int s_calls = 0;
   const bool log = ++s_calls <= 4;
   if (log) {
-    REXLOG_WARN("[LOOP] sub_82145420 enter#{} r3={} r4={}", s_calls, context.r3.u32,
-                context.r4.u32);
+    REXLOG_WARN("[LOOP] sub_82145420 enter#{} r3={} r4={} f5345={} f5346={} f5348={}",
+                s_calls, context.r3.u32, context.r4.u32,
+                (unsigned)base[0x831D5345], (unsigned)base[0x831D5346],
+                (unsigned)base[0x831D5348]);
   }
   __imp__sub_82145420(context, base);
   if (log) {
-    REXLOG_WARN("[LOOP] sub_82145420 exit#{} ret={} f5345={} f5348={}", s_calls,
-                context.r3.u32, (unsigned)base[0x831D5345], (unsigned)base[0x831D5348]);
+    REXLOG_WARN("[LOOP] sub_82145420 exit#{} ret={} f5345={} f5346={} f5348={}", s_calls,
+                context.r3.u32, (unsigned)base[0x831D5345],
+                (unsigned)base[0x831D5346], (unsigned)base[0x831D5348]);
   }
 }
 #endif
