@@ -10,6 +10,7 @@
 #include <thread>
 
 #include <SDL3/SDL_messagebox.h>
+#include <SDL3/SDL_video.h>
 #include <nfd.h>
 
 #include <apu/embedded_player.h>
@@ -61,7 +62,8 @@ int AskBox(SDL_MessageBoxFlags flags, const std::string& message,
     data.buttons = nativeButtons.data();
 
     int pressedId = kButtonCancel;
-    if (SDL_ShowMessageBox(&data, &pressedId) != 0)
+    // NOTE: SDL3 returns bool (true = success), not int.
+    if (!SDL_ShowMessageBox(&data, &pressedId))
         return kButtonCancel;
     return pressedId;
 }
@@ -500,9 +502,11 @@ bool RunSteps(const std::filesystem::path& installPath, bool skipGame,
 bool InstallerNative::Run(const std::filesystem::path& installPath, bool skipGame)
 {
     // Native setup must be windowed so dialogs and the console stay usable.
+    // Hide the (empty) game window entirely while setup runs.
     bool wasFullscreen = GameWindow::IsFullscreen();
     if (wasFullscreen)
         GameWindow::SetFullscreen(false);
+    SDL_HideWindow(GameWindow::s_pWindow);
 
     EmbeddedPlayer::Init();
     NFD_Init();
@@ -513,6 +517,7 @@ bool InstallerNative::Run(const std::filesystem::path& installPath, bool skipGam
     NFD_Quit();
     EmbeddedPlayer::Shutdown();
 
+    SDL_ShowWindow(GameWindow::s_pWindow);
     if (wasFullscreen)
         GameWindow::SetFullscreen(true);
 
