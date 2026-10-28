@@ -311,6 +311,46 @@ static std::thread g_libertyWatchdogThread;
 extern std::atomic<uint32_t> g_diagFramesPresented;
 extern std::atomic<uint32_t> g_diagDraws;
 
+// Safe guest reads for diagnostics: the arena is sparse, so reading an
+// uncommitted page faults (and would fire the arena guard, perturbing the run).
+// Consult /proc/self/maps first and never touch an unreadable page.
+static bool GuestRangeReadable(uint32_t guest, uint32_t len)
+{
+    uint8_t* base = g_memory.base;
+    if (!base) return false;
+    const uintptr_t target = reinterpret_cast<uintptr_t>(base) + guest;
+    FILE* maps = std::fopen("/proc/self/maps", "r");
+    if (!maps) return false;
+    char line[512];
+    bool ok = false;
+    while (std::fgets(line, sizeof(line), maps)) {
+        unsigned long a = 0, b = 0;
+        char perms[8] = {};
+        if (std::sscanf(line, "%lx-%lx %7s", &a, &b, perms) == 3) {
+            if (target >= a && target + len <= b) {
+                ok = (perms[0] == 'r');
+                break;
+            }
+        }
+    }
+    std::fclose(maps);
+    return ok;
+}
+
+static uint32_t SafeU32(uint32_t guest)
+{
+    if (!GuestRangeReadable(guest, 4)) return 0xFFFFFFFFu;
+    uint32_t raw;
+    std::memcpy(&raw, g_memory.base + guest, 4);
+    return __builtin_bswap32(raw);
+}
+
+static uint8_t SafeU8(uint32_t guest)
+{
+    if (!GuestRangeReadable(guest, 1)) return 0xFFu;
+    return g_memory.base[guest];
+}
+
 static void LibertyWatchdogLoop()
 {
     using namespace std::chrono;
@@ -404,16 +444,16 @@ static void LibertyWatchdogLoop()
             // (sub_821458B8 reads these two bytes).
             fprintf(stderr, "[LOADFLAGS] t=%.1fs active=%u ready=%u guard=%u gate=%d scene=0x%08X evt=0x%08X joblist=0x%08X jobs=%u/%u reg=0x%08X presents=%u draws=%u\n",
                     elapsed_s,
-                    (unsigned)mem_base[0x831D5335],
-                    (unsigned)mem_base[0x831D5348],
-                    (unsigned)mem_base[0x831D5345],
-                    (int32_t)__builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x82B0B48C)),
-                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831C2458)),
-                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D52F0)),
-                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D53EC)),
-                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D53EC + 300)),
-                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x831D53EC + 304)),
-                    __builtin_bswap32(*reinterpret_cast<uint32_t*>(mem_base + 0x83032744)),
+                    (unsigned)SafeU8(0x831D5335),
+                    (unsigned)SafeU8(0x831D5348),
+                    (unsigned)SafeU8(0x831D5345),
+                    (int32_t)SafeU32(0x82B0B48C),
+                    SafeU32(0x831C2458),
+                    SafeU32(0x831D52F0),
+                    SafeU32(0x831D53EC),
+                    SafeU32(0x831D53EC + 300),
+                    SafeU32(0x831D53EC + 304),
+                    SafeU32(0x83032744),
                     g_diagFramesPresented.load(std::memory_order_relaxed),
                     g_diagDraws.load(std::memory_order_relaxed));
         }
