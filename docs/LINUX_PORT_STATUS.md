@@ -758,6 +758,38 @@ thread waits forever.
 Two earlier claims are now retired: "the loader completes records" (wrong -
 it was the template) and "record-state is a byte" (wrong - big-endian u32).
 
+## Loads complete; the completion is never consumed (measured)
+
+`sub_82678CD8` is the callback the title load issue path hands to
+`pgStreamer::submit`. It does exactly one thing: `NtReleaseSemaphore` on the
+per-slot handle at `[slot+12]`. It **fires** (hundreds of times per run):
+
+```
+completion 82678CD8 #1  slot=0xDB56D2C4 buf=0xCA7AE000 sem=0xF8001014
+completion 82678CD8 #3  slot=0xDB56D8E4 buf=0xCADB0000 sem=0xF8001018
+```
+
+and the buffers it returns (`0xCA7AE000`, `0xCADA8000`, ...) are the very
+pointers the release path later treats as objects, so that crash is on real
+load buffers, not garbage.
+
+The signal goes nowhere. For those handles in the same run:
+
+```
+sem 0xF8001014: waits=0  releases=1
+sem 0xF8001018: waits=0  releases=1
+```
+
+No thread ever waits on a per-slot completion semaphore, so no completion is
+ever processed, no record state is ever advanced, and the boot wait never ends.
+
+The only thread in the image that waits on a loader-style semaphore is
+`sub_82299490` (thread entry #13), and it waits on a single global handle at
+`[0x82B3...]+7112`, not on the per-slot ones.
+
+That is the wall in one line: **the loader issues and completes work, but the
+consumer that drains per-slot completions does not exist in this run.**
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

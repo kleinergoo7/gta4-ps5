@@ -10213,9 +10213,19 @@ PPC_FUNC_HOOK(sub_8284CB80)
 {
     static std::atomic<uint32_t> s_calls{0};
     uint32_t n = s_calls.fetch_add(1) + 1;
-    if (n <= 8 || (n % 200) == 0)
-        LOGF_WARNING("[PGSTREAM] Open sub_8284CB80 call#{} lr={:#x}", n,
-                     static_cast<uint32_t>(ctx.lr));
+    if (n <= 10 || (n % 200) == 0)
+    {
+        char path[65];
+        for (int i = 0; i < 64; i++)
+        {
+            uint8_t c = PPC_LOAD_U8(ctx.r3.u32 + i);
+            path[i] = (c >= 32 && c < 127) ? (char)c : 0;
+            if (!c) break;
+        }
+        path[64] = 0;
+        LOGF_WARNING("[PGSTREAM] Open sub_8284CB80 call#{} lr={:#x} path=\"{}\"", n,
+                     static_cast<uint32_t>(ctx.lr), path);
+    }
     __imp__sub_8284CB80(ctx, base);
 }
 
@@ -10345,11 +10355,14 @@ PPC_FUNC_HOOK(sub_828497D8)
     static std::atomic<uint32_t> s_calls{0};
     static std::mutex s_wait_mu;
     static std::map<uint32_t, std::pair<uint32_t, uint32_t>> s_wait_counts;
+    static std::map<uint32_t, uint32_t> s_wait_tids;
     uint32_t n = s_calls.fetch_add(1) + 1;
     const uint32_t handle = ctx.r3.u32;
     {
         std::lock_guard<std::mutex> lock(s_wait_mu);
         s_wait_counts[handle].first++;
+        auto* self = rex::system::XThread::GetCurrentThread();
+        s_wait_tids[handle] = self ? self->thread_id() : 0;
     }
     __imp__sub_828497D8(ctx, base);
     uint32_t ret = ctx.r3.u32;
@@ -10373,6 +10386,9 @@ PPC_FUNC_HOOK(sub_828497D8)
         {
             if (kv.second.first > kv.second.second)
             {
+                uint32_t tid = 0;
+                auto it = s_wait_tids.find(kv.first);
+                if (it != s_wait_tids.end()) tid = it->second;
                 const char* typeName = "?";
                 if (ks)
                 {
@@ -10391,8 +10407,8 @@ PPC_FUNC_HOOK(sub_828497D8)
                         }
                     }
                 }
-                LOGF_WARNING("[WAITBLOCK] handle={:#x} {} entered={} exited={}", kv.first,
-                             typeName, kv.second.first, kv.second.second);
+                LOGF_WARNING("[WAITBLOCK] tid={} handle={:#x} {} entered={} exited={}", tid,
+                             kv.first, typeName, kv.second.first, kv.second.second);
             }
         }
     }
@@ -10729,7 +10745,44 @@ PPC_FUNC_HOOK(sub_82287700)
 LOG_DEEP_PROBE(sub_82A703D0)
 LOG_DEEP_PROBE(sub_82586EE8)
 LOG_DEEP_PROBE(sub_821D0558)
+// 82A491E0 polls [r3+10896] vs [r3+10908] in a loop around 82A41320; the main
+// thread hangs here with no kernel wait. Log the object and counters.
+PPC_FUNC_IMPL(__imp__sub_82A491E0);
+PPC_FUNC_HOOK(sub_82A491E0)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    {
+        const uint32_t o = ctx.r3.u32;
+        LOGF_WARNING("[BOOTSTAGE] > sub_82A491E0 #{} obj={:#x} c10896={} c10908={}", n, o,
+                     PPC_LOAD_U32(o + 10896), PPC_LOAD_U32(o + 10908));
+    }
+    __imp__sub_82A491E0(ctx, base);
+    LOGF_WARNING("[BOOTSTAGE] < sub_82A491E0 #{}", n);
+}
+// Callees of sub_82A41320, where the main thread parks inside the
+// 82287700#2 subtree. Entry without exit names the block.
+LOG_DEEP_PROBE(sub_82A13430)
+LOG_DEEP_PROBE(sub_82A50070)
+LOG_DEEP_PROBE(sub_82A41320)
 #undef LOG_DEEP_PROBE
+
+// 82678CD8 is the completion callback handed to pgStreamer::submit by the title
+// load issue path (82679804 passes &LAB_82678cd8). If it never fires, no load
+// ever completes and no record state advances.
+PPC_FUNC_IMPL(__imp__sub_82678CD8);
+PPC_FUNC_HOOK(sub_82678CD8)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    const uint32_t slot = ctx.r3.u32;
+    const uint32_t handle = slot ? PPC_LOAD_U32(slot + 12) : 0;
+    if (n <= 12 || (n % 200) == 0)
+        LOGF_WARNING("[TITLELOAD] completion 82678CD8 #{} slot={:#x} buf={:#x} sem={:#x}", n,
+                     slot, static_cast<uint32_t>(ctx.r4.u32), handle);
+    __imp__sub_82678CD8(ctx, base);
+}
+
 
 // Case-3 entry, reached only when the dispatcher sits in stage 3.
 LOG_STAGE_PROBE(sub_8223CAD8)
