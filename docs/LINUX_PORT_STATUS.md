@@ -943,6 +943,22 @@ right and the queue is genuinely never fed. The port runs every mechanism of
 the loader up to the point where something must post work into this static
 descriptor, and nothing does.
 
+## The poster runs, but not against the consumer we watch (measured)
+
+A hardware watchpoint on the consumer's work counter (`0x82FEFC9C`, caught even
+transient writes) recorded **zero writes for a whole run**. Yet the only
+function that writes a counter at that offset, `sub_82797FC0`, **does run**
+(once, returns).
+
+So the poster executes against a *different* object, and the consumer at
+`0x82FEEC9C` is never posted to. Together with its descriptor being correctly
+bound to `0xF8000848`, this is consistent with there being two queue
+incarnations: one the guest creates and feeds, one that exists statically and
+only waits.
+
+That is where the evidence stops agreeing with a single explanation, and it is
+the point at which further probing stops being informative.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
