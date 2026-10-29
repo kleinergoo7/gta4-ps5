@@ -888,6 +888,30 @@ Remaining candidates for the queue-population gap, both static work:
   blocked by the custom prologue at `829FF7B8`, so its append target is still
   unread.
 
+## The consumer\'s queue is always empty; the producer writes elsewhere
+
+The consumer loop `sub_82798038` is now fully characterised:
+
+```
+[CONSUMER] #1 obj=0x82FEEC9C work=0 waits=0 h4140=0xF8000848
+[CONSUMER] #2 obj=0x82FEEC9C work=0 waits=1 h4140=0xF8000848
+[CONSUMER] #3 obj=0x82FEEC9C work=0 waits=2 h4140=0xF8000848
+```
+
+It takes critical section `[obj+4108]`, reads its work counter at `[obj+4096]`,
+and when that is zero increments its wait counter `[obj+4144]`, releases, and
+waits on `0xF8000848`. The work counter stays **0 for the whole run** while the
+wait counter climbs.
+
+So every mechanism in the loader runs *and writes to a different queue object
+than the consumer reads*: the manager is heap-allocated (`0xDB56D2B0`, vtable
+`0x8200DD84`), the consumer is a static instance at `0x82FEEC9C`. The two are
+never linked.
+
+This is the root cause in one line: **the port never connects the streaming
+manager to the static consumer instance**, so the consumer waits on an empty
+queue forever and no record state is ever written.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

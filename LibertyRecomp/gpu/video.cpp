@@ -10788,8 +10788,9 @@ PPC_FUNC_HOOK(sub_82798038)
     const uint32_t obj = ctx.r3.u32;
     if (n <= 6)
     {
-        LOGF_WARNING("[CONSUMER] > 82798038 #{} obj={:#x} h36={:#x} h40={:#x} h4140={:#x}", n,
-                     obj, obj ? PPC_LOAD_U32(obj + 36) : 0, obj ? PPC_LOAD_U32(obj + 40) : 0,
+        LOGF_WARNING("[CONSUMER] > 82798038 #{} obj={:#x} work={} waits={} h4140={:#x}", n,
+                     obj, obj ? PPC_LOAD_U32(obj + 4096) : 0,
+                     obj ? PPC_LOAD_U32(obj + 4144) : 0,
                      obj ? PPC_LOAD_U32(obj + 4140) : 0);
     }
     __imp__sub_82798038(ctx, base);
