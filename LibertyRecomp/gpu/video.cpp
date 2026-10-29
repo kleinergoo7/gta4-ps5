@@ -10454,6 +10454,30 @@ PPC_FUNC_HOOK(sub_82219918)
     }
 }
 
+// Tail of sub_821411D8 after the second-table store: one of these may append
+// the table entries. Log the count after each.
+#define LOG_TBL_PROBE(fn)                                                    \
+    PPC_FUNC_IMPL(__imp__##fn);                                              \
+    PPC_FUNC_HOOK(fn)                                                        \
+    {                                                                        \
+        static std::atomic<uint32_t> s_calls{0};                             \
+        uint32_t n = s_calls.fetch_add(1) + 1;                               \
+        __imp__##fn(ctx, base);                                              \
+        if (n <= 4)                                                          \
+        {                                                                    \
+            const uint32_t tbl = PPC_LOAD_U32(0x831E4DD4);                  \
+            uint32_t cnt = 0;                                                \
+            if (tbl) cnt = PPC_LOAD_U16(tbl + 328);                          \
+            LOGF_WARNING("[BOOTSTAGE] " #fn " #{} tbl={:#x} cnt={}", n, tbl, cnt); \
+        }                                                                    \
+    }
+
+LOG_TBL_PROBE(sub_82288550)
+LOG_TBL_PROBE(sub_821F52C8)
+LOG_TBL_PROBE(sub_822233A8)
+LOG_TBL_PROBE(sub_82220118)
+#undef LOG_TBL_PROBE
+
 // Case-3 entry, reached only when the dispatcher sits in stage 3.
 LOG_STAGE_PROBE(sub_8223CAD8)
 // Case-4/5/6 entries. Together with the case 1/2/3 probes above, whichever

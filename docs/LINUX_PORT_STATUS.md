@@ -624,6 +624,30 @@ the generated C++. Headless decompile (`MkFunc` + `Dec` scripts) gives 4 of 5:
 The dump code was removed after the image was obtained
 (`/tmp/opencode/guest_82.bin` kept outside the repo).
 
+## Init completes with an empty second table (measured)
+
+All five calls after the second-table store run in one boot and leave the
+count at zero:
+
+```
+sub_82219918 #1 tbl=0xD9137880 cnt=0
+sub_82288550 #1 tbl=0xD9137880 cnt=0
+sub_821F52C8 #1 tbl=0xD9137880 cnt=0
+sub_822233A8 #1 tbl=0xD9137880 cnt=0
+sub_82220118 #1 tbl=0xD9137880 cnt=0
+```
+
+So `sub_821411D8` (alloc + zero + store + filler + post-init) completes
+without appending a single entry. The Ghidra view agrees: its decompiled body
+allocates both tables, zeroes the count, calls the filler (first table only)
+and the four tail calls, none of which touches `+328`.
+
+The circle is now closed from both sides: the record writer needs table
+entries that only code downstream of the boot wait can append, and the boot
+wait needs the record the writer cannot fill. Breaking it needs one drive
+point supplied by the port (table entries, manager pump, or frame pulse),
+not another probe.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
