@@ -1,6 +1,7 @@
 #include "video.h"
 #include "gtaiv_device.h"
 #include <os/logger.h>
+#include <rex/system/xthread.h>
 #include "gtaiv_render_state.h"
 #include "postprocess_aa.h"
 #include "postprocess_renderer.h"
@@ -10331,12 +10332,59 @@ PPC_FUNC_IMPL(__imp__sub_828497D8);
 PPC_FUNC_HOOK(sub_828497D8)
 {
     static std::atomic<uint32_t> s_calls{0};
+    static std::mutex s_wait_mu;
+    static std::map<uint32_t, std::pair<uint32_t, uint32_t>> s_wait_counts;
     uint32_t n = s_calls.fetch_add(1) + 1;
     const uint32_t handle = ctx.r3.u32;
+    {
+        std::lock_guard<std::mutex> lock(s_wait_mu);
+        s_wait_counts[handle].first++;
+    }
     __imp__sub_828497D8(ctx, base);
+    uint32_t ret = ctx.r3.u32;
+    bool dump = false;
+    {
+        std::lock_guard<std::mutex> lock(s_wait_mu);
+        s_wait_counts[handle].second++;
+        dump = (n % 200) == 0;
+    }
     if (n <= 40 || (n % 100) == 0)
-        LOGF_WARNING("[WAIT] #{} handle={:#x} ret={}", n, handle,
-                     static_cast<uint32_t>(ctx.r3.u32));
+        LOGF_WARNING("[WAIT] #{} tid={} handle={:#x} ret={}", n,
+                     rex::system::XThread::GetCurrentThread()
+                         ? rex::system::XThread::GetCurrentThread()->thread_id()
+                         : 0,
+                     handle, ret);
+    if (dump)
+    {
+        std::lock_guard<std::mutex> lock(s_wait_mu);
+        auto* ks = rex::runtime::current_kernel_state();
+        for (const auto& kv : s_wait_counts)
+        {
+            if (kv.second.first > kv.second.second)
+            {
+                const char* typeName = "?";
+                if (ks)
+                {
+                    auto object =
+                        ks->object_table()->LookupObject<rex::system::XObject>(kv.first);
+                    if (object)
+                    {
+                        switch (object->type())
+                        {
+                        case rex::system::XObject::Type::Event: typeName = "Event"; break;
+                        case rex::system::XObject::Type::Semaphore: typeName = "Semaphore"; break;
+                        case rex::system::XObject::Type::Thread: typeName = "Thread"; break;
+                        case rex::system::XObject::Type::Mutant: typeName = "Mutant"; break;
+                        case rex::system::XObject::Type::Timer: typeName = "Timer"; break;
+                        default: break;
+                        }
+                    }
+                }
+                LOGF_WARNING("[WAITBLOCK] handle={:#x} {} entered={} exited={}", kv.first,
+                             typeName, kv.second.first, kv.second.second);
+            }
+        }
+    }
 }
 
 // Guest thread start: sub_82A21600 takes the entry point in r3 and the
@@ -10481,6 +10529,193 @@ LOG_TBL_PROBE(sub_821F52C8)
 LOG_TBL_PROBE(sub_822233A8)
 LOG_TBL_PROBE(sub_82220118)
 #undef LOG_TBL_PROBE
+
+// Callees of sub_82141F00 after its registry chain returns, in program order.
+// sub_82141F00 entered once via the stage-7 branch and had not exited at
+// t=42 s; the last probe below that fires names the blocking call.
+#define LOG_INIT_PROBE(fn)                                                   \
+    PPC_FUNC_IMPL(__imp__##fn);                                              \
+    PPC_FUNC_HOOK(fn)                                                        \
+    {                                                                        \
+        static std::atomic<uint32_t> s_calls{0};                             \
+        uint32_t n = s_calls.fetch_add(1) + 1;                               \
+        if (n <= 4)                                                          \
+            LOGF_WARNING("[BOOTSTAGE] > " #fn " #{}", n);                    \
+        __imp__##fn(ctx, base);                                              \
+        if (n <= 4)                                                          \
+            LOGF_WARNING("[BOOTSTAGE] < " #fn " #{}", n);                    \
+    }
+
+LOG_INIT_PROBE(sub_822D24E0)
+LOG_INIT_PROBE(sub_822BC8C0)
+LOG_INIT_PROBE(sub_822BC9A8)
+LOG_INIT_PROBE(sub_822DB0D8)
+LOG_INIT_PROBE(sub_821CFC48)
+LOG_INIT_PROBE(sub_8224CBB8)
+LOG_INIT_PROBE(sub_822E4B28)
+LOG_INIT_PROBE(sub_822ECA70)
+LOG_INIT_PROBE(sub_822BE638)
+LOG_INIT_PROBE(sub_822E5100)
+LOG_INIT_PROBE(sub_82318808)
+LOG_INIT_PROBE(sub_82259668)
+LOG_INIT_PROBE(sub_8229FA60)
+LOG_INIT_PROBE(sub_8225AA08)
+LOG_INIT_PROBE(sub_822420F0)
+LOG_INIT_PROBE(sub_821417C8)
+LOG_INIT_PROBE(sub_82145770)
+#undef LOG_INIT_PROBE
+
+// Callees of sub_821417C8 in program order. It entered once and never
+// returned; the last entry below without its exit names the block.
+#define LOG_DEEP_PROBE(fn)                                                   \
+    PPC_FUNC_IMPL(__imp__##fn);                                              \
+    PPC_FUNC_HOOK(fn)                                                        \
+    {                                                                        \
+        static std::atomic<uint32_t> s_calls{0};                             \
+        uint32_t n = s_calls.fetch_add(1) + 1;                               \
+        if (n <= 4)                                                          \
+            LOGF_WARNING("[BOOTSTAGE] > " #fn " #{}", n);                    \
+        __imp__##fn(ctx, base);                                              \
+        if (n <= 4)                                                          \
+            LOGF_WARNING("[BOOTSTAGE] < " #fn " #{}", n);                    \
+    }
+
+LOG_DEEP_PROBE(sub_82219EF8)
+LOG_DEEP_PROBE(sub_82219AC0)
+// sub_8285FF50: enters RtlEnterCriticalSection(r4) when [r4] != 0. It never
+// returns, and a CS enter never appears in the NtWait pairing. Log the lock.
+PPC_FUNC_IMPL(__imp__sub_8285FF50);
+PPC_FUNC_HOOK(sub_8285FF50)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    const uint32_t cs = ctx.r4.u32;
+    const uint32_t cond = PPC_LOAD_U32(cs);
+    const uint32_t lock_count = PPC_LOAD_U32(cs + 4);
+    const uint32_t recursion = PPC_LOAD_U32(cs + 8);
+    const uint32_t owner = PPC_LOAD_U32(cs + 12);
+    const uint32_t sem = PPC_LOAD_U32(cs + 16);
+    if (n <= 8)
+        LOGF_WARNING("[CSBLOCK] #{} cs={:#x} cond={} lock={} rec={} owner={:#x} sem={:#x} r3={:#x}",
+                     n, cs, cond, lock_count, recursion, owner, sem,
+                     static_cast<uint32_t>(ctx.r3.u32));
+    __imp__sub_8285FF50(ctx, base);
+    if (n <= 8)
+        LOGF_WARNING("[CSBLOCK] #{} returned", n);
+}
+LOG_DEEP_PROBE(sub_82297A10)
+LOG_DEEP_PROBE(sub_82299930)
+LOG_DEEP_PROBE(sub_82219F98)
+LOG_DEEP_PROBE(sub_8221AF90)
+// sub_829FFB50 is ppc_srand, a host export with no __imp__ symbol: not hookable
+// here, and srand returns immediately in any case.
+LOG_DEEP_PROBE(sub_826C4798)
+LOG_DEEP_PROBE(sub_821E3758)
+LOG_DEEP_PROBE(sub_821F1120)
+LOG_DEEP_PROBE(sub_821FC340)
+LOG_DEEP_PROBE(sub_82211EA0)
+LOG_DEEP_PROBE(sub_822215B0)
+LOG_DEEP_PROBE(sub_82226878)
+LOG_DEEP_PROBE(sub_822373E0)
+LOG_DEEP_PROBE(sub_822446B8)
+LOG_DEEP_PROBE(sub_8225A178)
+LOG_DEEP_PROBE(sub_82206D28)
+LOG_DEEP_PROBE(sub_8226FB60)
+LOG_DEEP_PROBE(sub_821CFED0)
+LOG_DEEP_PROBE(sub_822796D0)
+LOG_DEEP_PROBE(sub_821E08C8)
+LOG_DEEP_PROBE(sub_82289588)
+LOG_DEEP_PROBE(sub_82295C20)
+LOG_DEEP_PROBE(sub_822250C8)
+LOG_DEEP_PROBE(sub_8229B788)
+LOG_DEEP_PROBE(sub_82233F28)
+LOG_DEEP_PROBE(sub_82214298)
+LOG_DEEP_PROBE(sub_8222CE48)
+LOG_DEEP_PROBE(sub_8223B678)
+LOG_DEEP_PROBE(sub_82214BC0)
+LOG_DEEP_PROBE(sub_8229F410)
+LOG_DEEP_PROBE(sub_8229FA80)
+LOG_DEEP_PROBE(sub_823A5330)
+LOG_DEEP_PROBE(sub_824409C8)
+LOG_DEEP_PROBE(sub_821B41E8)
+LOG_DEEP_PROBE(sub_822B74C0)
+LOG_DEEP_PROBE(sub_821C1308)
+LOG_DEEP_PROBE(sub_822BE6A8)
+LOG_DEEP_PROBE(sub_822BE658)
+LOG_DEEP_PROBE(sub_823F4860)
+LOG_DEEP_PROBE(sub_823F1A10)
+LOG_DEEP_PROBE(sub_82258220)
+LOG_DEEP_PROBE(sub_821481B8)
+LOG_DEEP_PROBE(sub_82155B78)
+LOG_DEEP_PROBE(sub_822EF740)
+LOG_DEEP_PROBE(sub_821C0DA8)
+LOG_DEEP_PROBE(sub_821F73E8)
+LOG_DEEP_PROBE(sub_8221B588)
+LOG_DEEP_PROBE(sub_8232CFD8)
+LOG_DEEP_PROBE(sub_822A0B88)
+LOG_DEEP_PROBE(sub_822A6808)
+LOG_DEEP_PROBE(sub_822A0BE0)
+LOG_DEEP_PROBE(sub_8227FAF0)
+LOG_DEEP_PROBE(sub_822B98C0)
+LOG_DEEP_PROBE(sub_822B8C40)
+LOG_DEEP_PROBE(sub_826041E8)
+LOG_DEEP_PROBE(sub_822D9E38)
+LOG_DEEP_PROBE(sub_8265CB30)
+LOG_DEEP_PROBE(sub_8222E468)
+LOG_DEEP_PROBE(sub_82297178)
+LOG_DEEP_PROBE(sub_8232EF08)
+LOG_DEEP_PROBE(sub_826CEEE0)
+LOG_DEEP_PROBE(sub_82203CD8)
+LOG_DEEP_PROBE(sub_822428D8)
+LOG_DEEP_PROBE(sub_82157F90)
+LOG_DEEP_PROBE(sub_826C4200)
+LOG_DEEP_PROBE(sub_821D4900)
+LOG_DEEP_PROBE(sub_821F6098)
+LOG_DEEP_PROBE(sub_821436E8)
+LOG_DEEP_PROBE(sub_82204C70)
+LOG_DEEP_PROBE(sub_82141BE0)
+LOG_DEEP_PROBE(sub_82212610)
+LOG_DEEP_PROBE(sub_822160B0)
+LOG_DEEP_PROBE(sub_8215C5A8)
+// Direct callees of sub_821F6098. It entered once and its first call
+// (sub_8285FF50) returns, so the block is in one of these.
+LOG_DEEP_PROBE(sub_8227ECF8)
+LOG_DEEP_PROBE(sub_8235C370)
+LOG_DEEP_PROBE(sub_82146690)
+LOG_DEEP_PROBE(sub_82287F08)
+LOG_DEEP_PROBE(sub_82146600)
+LOG_DEEP_PROBE(sub_821464B8)
+LOG_DEEP_PROBE(sub_82146448)
+LOG_DEEP_PROBE(sub_82148030)
+LOG_DEEP_PROBE(sub_82288490)
+LOG_DEEP_PROBE(sub_821F5028)
+LOG_DEEP_PROBE(sub_8227F6B8)
+LOG_DEEP_PROBE(sub_821F3578)
+LOG_DEEP_PROBE(sub_821D03E8)
+PPC_FUNC_IMPL(__imp__sub_82287700);
+PPC_FUNC_HOOK(sub_82287700)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    // Decrements [r3+12]; at zero it calls [[r3]] indirectly (refcount
+    // release -> virtual cleanup). Log the target; a block there names it.
+    const uint32_t obj = ctx.r3.u32;
+    const uint32_t vptr = PPC_LOAD_U32(obj);
+    const uint32_t target = PPC_LOAD_U32(vptr);
+    if (n <= 6)
+        LOGF_WARNING("[BOOTSTAGE] > sub_82287700 #{} obj={:#x} vptr={:#x} target={:#x}", n,
+                     obj, vptr, target);
+    __imp__sub_82287700(ctx, base);
+    if (n <= 6)
+        LOGF_WARNING("[BOOTSTAGE] < sub_82287700 #{}", n);
+}
+// Pool builders for the streaming pool at 0x82A9AA7C (still zero all run).
+// sub_82570BC0 ran but did not build it; these are the remaining static
+// references to that base.
+LOG_DEEP_PROBE(sub_82A703D0)
+LOG_DEEP_PROBE(sub_82586EE8)
+LOG_DEEP_PROBE(sub_821D0558)
+#undef LOG_DEEP_PROBE
 
 // Case-3 entry, reached only when the dispatcher sits in stage 3.
 LOG_STAGE_PROBE(sub_8223CAD8)

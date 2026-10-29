@@ -672,6 +672,33 @@ current wall.
 Neither flag is sufficient alone: clear-ready without the ticker parks stage 2
 on `0xF8000044`; the ticker without clear-ready never reaches the dispatcher.
 
+## Reframe: the game runs, the renderer and loader do not (measured)
+
+With both flags, the picture changed from "boot stuck" to "game running":
+
+- stage machine spins (frame waits fed by the ticker), reaches stage 7;
+- `sub_82141F00` runs its registry chain (`reg = 0xDD660350`), then its long
+  tail (`sub_821417C8`, 89 calls) executes dozens of init functions;
+- audio initializes, theme plays; `sub_825120E8` inserts requests;
+- resource cache paths execute (refill via `sub_82146600`, release via
+  `sub_82287700`, list walk via `sub_821CECC0`).
+
+Frozen: `presents=2 draws=6`, `scene=0`, `loadstate=1`, pool `0x82A9AA7C=0`.
+The render thread (`sub_82144188`) spins but its submit branch
+(`record.state==3`) never fires, and the title load (`sub_826793F0`) never
+issues. The load path (manager pump + streaming pool + record machine) is
+dead while the game logic around it runs.
+
+Two failure shapes seen, timing-dependent: a hang in the release path
+(`sub_82287700 #2` via the refill, no exit, no wait) and a crash on a garbage
+object through an indirect call (`821CFC48 -> ... -> 821464B8 -> bctrl ->
+82287700`, first word `0xCADA8000`). Both smell of init running on
+half-built state rather than a single broken function.
+
+Next: who builds the streaming pool. `sub_82570BC0` ran without building it;
+the remaining static references (`sub_82A703D0`, `sub_82586EE8`,
+`sub_821D0558`) get probes.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
