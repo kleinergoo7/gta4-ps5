@@ -10774,6 +10774,9 @@ LOG_DEEP_PROBE(sub_82798398)
 LOG_DEEP_PROBE(sub_82798BA0)
 LOG_DEEP_PROBE(sub_821910D0)
 LOG_DEEP_PROBE(sub_82191DF0)
+// Queue insert under spinlock: raise IRQL, acquire, 82190120 x2, release.
+// If this never runs, nothing ever enqueues work for the consumer.
+LOG_DEEP_PROBE(sub_8218FFB0)
 #undef LOG_DEEP_PROBE
 
 // Which handle does the streaming consumer park on?
