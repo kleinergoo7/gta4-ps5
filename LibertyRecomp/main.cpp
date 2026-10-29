@@ -620,6 +620,21 @@ static void LibertyWatchdogLoop()
                         s_last_tbl = tbl;
                     }
                 }
+                // Resource index table 0x82C6C3D8 (read by 82146690/82287700):
+                // dump on change to see if entries are ever appended.
+                {
+                    static uint32_t s_last_w[4] = {0, 0, 0, 0};
+                    static bool s_have_w = false;
+                    uint32_t w[4];
+                    for (int i = 0; i < 4; i++) w[i] = SafeU32(0x82C6C3D8u + i * 4);
+                    if (!s_have_w || w[0] != s_last_w[0] || w[1] != s_last_w[1] ||
+                        w[2] != s_last_w[2] || w[3] != s_last_w[3])
+                    {
+                        fprintf(stderr, "[RESTBL] %08X %08X %08X %08X\n", w[0], w[1], w[2], w[3]);
+                        for (int i = 0; i < 4; i++) s_last_w[i] = w[i];
+                        s_have_w = true;
+                    }
+                }
                 static uint8_t s_record[400];
                 static bool s_have_record = false;
                 uint8_t now[400];
