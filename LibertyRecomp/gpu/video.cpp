@@ -10177,12 +10177,17 @@ PPC_FUNC_HOOK(sub_82849860)
 PPC_FUNC_IMPL(__imp__sub_826793F0);
 PPC_FUNC_HOOK(sub_826793F0)
 {
-    static std::atomic<uint32_t> s_calls{0};
-    uint32_t n = s_calls.fetch_add(1) + 1;
+    static std::atomic<uint32_t> s_in{0};
+    static std::atomic<uint32_t> s_out{0};
+    uint32_t n = s_in.fetch_add(1) + 1;
     if (n <= 8 || (n % 50) == 0)
-        LOGF_WARNING("[TITLELOAD] issue sub_826793F0 call#{} lr={:#x}", n,
+        LOGF_WARNING("[TITLELOAD] > issue sub_826793F0 #{} lr={:#x}", n,
                      static_cast<uint32_t>(ctx.lr));
     __imp__sub_826793F0(ctx, base);
+    uint32_t m = s_out.fetch_add(1) + 1;
+    if (m <= 8 || (m % 50) == 0)
+        LOGF_WARNING("[TITLELOAD] < issue sub_826793F0 #{} ret={:#x}", m,
+                     static_cast<uint32_t>(ctx.r3.u32));
 }
 
 // pgStreamer probes (docs/GTA_IV_ASSET_STREAMING_SYSTEM.md §9): is the queued
