@@ -737,17 +737,26 @@ st=[1 2 0 3] idx=0
 
 and it does not change for the whole run.
 
-So the title load path is **not** dead: record 3 reaches state 3 (loaded),
-record 1 sits at 2 (requested, not issued), records 0 and 2 stay at 1 and 0.
-The main thread clears `ready` only for `record[idx].state == 3` with
-`idx = 0`, and record 0 is the one that never leaves 1.
+Hardware watchpoints on the state words of records 1 and 3 show **one write
+each, both at boot, both from `sub_82145968` via `sub_82145420`**:
 
-The first table's type names are `DELAYED_IDE`, `DELAYED_IPL`, `ANIMGRP`,
-`HANDLING`, ... so record 0 is the deferred IDE (asset index) load. The other
-types progress; the one the boot waits on does not.
+```
+REC1 0 -> 0x02000000  (state 2)   sub_82145968 <- sub_82145420 <- sub_82140000
+REC3 0 -> 0x03000000  (state 3)   same chain
+```
 
-This supersedes the earlier "record never advances, nothing is loaded"
-conclusion, which was an artefact of the byte-sized read.
+So `[1 2 0 3]` are **template defaults written once at boot**, not load
+progress. Record 3's "3" is not a completion; nothing ever writes a record
+state again in the whole run.
+
+Corrected picture: the record array is initialised from a per-type template
+and then never driven. The loader issues I/O (`sub_826793F0` x500, 4300+
+AsyncIO completions) but no completion handler ever updates the record state
+machine, so `record[0].state` stays at its template value 1 and the main
+thread waits forever.
+
+Two earlier claims are now retired: "the loader completes records" (wrong -
+it was the template) and "record-state is a byte" (wrong - big-endian u32).
 
 ## Known issues not yet fixed
 
