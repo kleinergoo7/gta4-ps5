@@ -908,9 +908,20 @@ than the consumer reads*: the manager is heap-allocated (`0xDB56D2B0`, vtable
 `0x8200DD84`), the consumer is a static instance at `0x82FEEC9C`. The two are
 never linked.
 
-This is the root cause in one line: **the port never connects the streaming
-manager to the static consumer instance**, so the consumer waits on an empty
-queue forever and no record state is ever written.
+Caveat added after checking: the static consumer is registered in a
+`.data` list node at `0x82FEFCA4` (`{0x82FEEC9C, 0x01000000, ...}`), and that
+node has **no code xrefs** and no `lis/addi` construction anywhere in the
+image - it is compile-time initialised. So there is no "linkage code that never
+ran" to find; the link is static.
+
+That weakens the two-instance framing: the consumer is reachable through a
+static list, so either the manager posts to a different node, or this
+particular consumer is not the one that serves load completions. The measured
+fact that stands is narrower and still decisive: **the consumer that is
+running polls a work counter that never leaves 0, and the completion callbacks
+release semaphores nothing waits on.** Which object *should* have received the
+work is now the question, and it needs the list's other nodes enumerated rather
+than another probe of this one.
 
 ## Known issues not yet fixed
 
