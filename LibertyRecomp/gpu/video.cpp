@@ -10132,14 +10132,17 @@ PPC_FUNC_HOOK(sub_82A12F50)
     {                                                    \
         static std::atomic<uint32_t> s_calls{0};         \
         uint32_t n = s_calls.fetch_add(1) + 1;           \
-        if (n <= 4 || (n % 200) == 0)                    \
-            LOGF_WARNING("[MANAGER] " name "#{}", n);    \
+        if (n <= 6 || (n % 200) == 0)                    \
+            LOGF_WARNING("[MANAGER] " name "#{} lr={:#x} this={:#x}", n, \
+                         static_cast<uint32_t>(ctx.lr), ctx.r3.u32); \
         __imp__##fn(ctx, base);                          \
     }
 
 LOG_MANAGER_SLOT(sub_82679DB8, "slot5-update")
 LOG_MANAGER_SLOT(sub_82679F48, "slot6-update")
 LOG_MANAGER_SLOT(sub_82679E50, "slot8-update")
+LOG_MANAGER_SLOT(sub_82678C60, "slot7-probe")
+LOG_MANAGER_SLOT(sub_826799E0, "slot11-probe")
 #undef LOG_MANAGER_SLOT
 
 // sub_82678EB0 — title load-slot init. Capture `this` so the manager object and
@@ -10177,16 +10180,19 @@ PPC_FUNC_HOOK(sub_82849860)
 PPC_FUNC_IMPL(__imp__sub_826793F0);
 PPC_FUNC_HOOK(sub_826793F0)
 {
-    static std::atomic<uint32_t> s_in{0};
-    static std::atomic<uint32_t> s_out{0};
-    uint32_t n = s_in.fetch_add(1) + 1;
-    if (n <= 8 || (n % 50) == 0)
-        LOGF_WARNING("[TITLELOAD] > issue sub_826793F0 #{} lr={:#x}", n,
-                     static_cast<uint32_t>(ctx.lr));
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    const uint32_t a3 = ctx.r3.u32;
+    const uint32_t a4 = ctx.r4.u32;
+    const uint32_t a5 = ctx.r5.u32;
+    if (n <= 18 || (n % 50) == 0)
+        LOGF_WARNING("[TITLELOAD] > issue sub_826793F0 #{} lr={:#x} r3={:#x} r4={:#x} r5={:#x}", n,
+                     static_cast<uint32_t>(ctx.lr), a3, a4, a5);
     __imp__sub_826793F0(ctx, base);
-    uint32_t m = s_out.fetch_add(1) + 1;
-    if (m <= 8 || (m % 50) == 0)
-        LOGF_WARNING("[TITLELOAD] < issue sub_826793F0 #{} ret={:#x}", m,
+    static std::atomic<uint32_t> s_out{0};
+    uint32_t k = s_out.fetch_add(1) + 1;
+    if (k <= 18 || (k % 50) == 0)
+        LOGF_WARNING("[TITLELOAD] < issue sub_826793F0 #{} ret={:#x}", k,
                      static_cast<uint32_t>(ctx.r3.u32));
 }
 
@@ -10703,13 +10709,12 @@ PPC_FUNC_HOOK(sub_82287700)
     static std::atomic<uint32_t> s_calls{0};
     uint32_t n = s_calls.fetch_add(1) + 1;
     // Decrements [r3+12]; at zero it calls [[r3]] indirectly (refcount
-    // release -> virtual cleanup). Log the target; a block there names it.
+    // release -> virtual cleanup). Log registers only: on the 821CECC0 path
+    // r3 can be an uninitialized index, and even a probe read faults
+    // (REX_LOAD has no guard for wild guest addresses).
     const uint32_t obj = ctx.r3.u32;
-    const uint32_t vptr = PPC_LOAD_U32(obj);
-    const uint32_t target = PPC_LOAD_U32(vptr);
     if (n <= 6)
-        LOGF_WARNING("[BOOTSTAGE] > sub_82287700 #{} obj={:#x} vptr={:#x} target={:#x}", n,
-                     obj, vptr, target);
+        LOGF_WARNING("[BOOTSTAGE] > sub_82287700 #{} obj={:#x}", n, obj);
     __imp__sub_82287700(ctx, base);
     if (n <= 6)
         LOGF_WARNING("[BOOTSTAGE] < sub_82287700 #{}", n);
