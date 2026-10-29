@@ -923,6 +923,26 @@ release semaphores nothing waits on.** Which object *should* have received the
 work is now the question, and it needs the list's other nodes enumerated rather
 than another probe of this one.
 
+## The consumer is statically bound to its event (measured)
+
+The object at `0x82FEEC9C` sits in a filled-in descriptor inside the image
+snapshot:
+
+```
+82fefca0: 00000000 82FEEC9C 01000000 00000000
+82fefcc0: 00000000 00000000 F8000848 00000003
+```
+
+So the consumer object, its state word and the event handle `0xF8000848` are
+recorded together at init - the consumer is correctly wired to the event it
+waits on. Nothing is mis-bound; there is simply no producer for the work
+counter at `[obj+4096]`.
+
+That closes the "wrong instance / wrong binding" line of enquiry: the wiring is
+right and the queue is genuinely never fed. The port runs every mechanism of
+the loader up to the point where something must post work into this static
+descriptor, and nothing does.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
