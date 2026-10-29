@@ -807,6 +807,39 @@ work it can act on. The job-queue object behind `[0x831D53EC]` was dumped as
 well; its first word changes from the vtable pointer to `1` between samples and
 no queue counters ever move.
 
+## Session summary: what is proven, what is left
+
+Proven with the two flags (`--experiment-clear-ready --experiment-frame-signal`):
+
+- the stage machine reaches stage 7 and `sub_82141F00` runs the registry chain
+  (`reg != 0`, `sub_822D3190` returns the manager);
+- requests are produced (`sub_825120E8` x500+), the manager's update slots 5, 6
+  and 11 run, and the title load issue `sub_826793F0` runs (ret=1);
+- `pgStreamer` opens assets (`stream:\NNNNN`) and its worker completes
+  thousands of IOs; the title completion callback `sub_82678CD8` fires and
+  releases a per-slot semaphore;
+- audio initialises and the title theme plays.
+
+Not present anywhere in a run:
+
+- any thread waiting on a per-slot completion semaphore (`waits=0`,
+  `releases>0`), so completions are never consumed;
+- any write to a record state after boot (watchpoints on records 1 and 3 show
+  one write each, both from the boot template);
+- the work-event waker `sub_821904B8` (pulsing the event by hand changed
+  nothing);
+- slots 7 and 8 dispatch, the streaming pool allocation, the second-table
+  appender.
+
+So the boot is not blocked by a missing flag, a wrong address, a driver, or a
+race: it is blocked because **no consumer drains the loader completions**, and
+the record state machine that the boot waits on is driven only by that consumer.
+
+Unblocking requires either (a) finding and restoring that consumer, or
+(b) explicitly driving the record state machine from the port - a labelled
+workaround that fabricates guest progress, which the project rules allow only
+with a named root cause and removal condition.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
