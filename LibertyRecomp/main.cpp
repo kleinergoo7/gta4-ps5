@@ -564,6 +564,24 @@ static void LibertyWatchdogLoop()
             // watchpoint only sees CPU stores; this snapshot also catches DMA
             // that lands in the same host mapping.
             {
+                // Count field of the second load table: catches any appender
+                // regardless of addressing mode (literal or computed).
+                const uint32_t tbl = SafeU32(0x831E4DD4u);
+                if (tbl)
+                {
+                    const uint32_t cnt = (uint32_t)mem_base[tbl + 328] |
+                                         ((uint32_t)mem_base[tbl + 329] << 8);
+                    static bool s_have_cnt = false;
+                    static uint32_t s_last_cnt = 0;
+                    static uint32_t s_last_tbl = 0;
+                    if (!s_have_cnt || cnt != s_last_cnt || tbl != s_last_tbl)
+                    {
+                        fprintf(stderr, "[TBLCNT] tbl=0x%08X cnt=%u\n", tbl, cnt);
+                        s_have_cnt = true;
+                        s_last_cnt = cnt;
+                        s_last_tbl = tbl;
+                    }
+                }
                 static uint8_t s_record[400];
                 static bool s_have_record = false;
                 uint8_t now[400];

@@ -596,6 +596,34 @@ Next action is not another probe. It is a decompiler view of
 `sub_82219918` / `sub_82140748` to find the appender by computed address,
 or a comparison against a port that already boots (PS5 branch).
 
+## Decompiler view obtained (Ghidra 12.2, raw PPC BE32 base 0x82000000)
+
+Guest image dumped once (`0x82000000` + 18 MB, holes zeroed) and imported as
+`PowerPC:BE:32:default`. Anchor verified: file offset `0x145968` disassembles to
+`mflr r12; bl 0x829FF790; stfd f31,-160(r1)` — the `sub_82145968` prologue from
+the generated C++. Headless decompile (`MkFunc` + `Dec` scripts) gives 4 of 5:
+
+- `sub_82219918`: zeroes a TLS struct, calls `sub_825FBE78`, then submits an
+  async request via `sub_8284D220`. Never touches the load-table count.
+  Eliminated as the appender.
+- `sub_82140748`: copies asset-type names from `0x820B8E7C` into the first
+  table: `DELAYED_IDE`, `DELAYED_IPL`, `ANIMGRP`, `HANDLING`, `VEHICLEEXTRAS`,
+  `GXT`, `PLAYER`, `CARCOLS`, `PEDGRP`, `CARGRP`, `RADIO`, `RADIOLOGOS`,
+  `RADARBLIPS`, `WEAPONINFO`, `THROWNWEAPONINFO`, … First table = type-name
+  registry. Never touches the second table count.
+- `sub_821411D8`: two allocations confirmed (1656 B first, 376 B second),
+  count zeroed at `+328`. Matches the watchpoint result.
+- `sub_82145420`: writes `ready`, `loader_active`, record base — matches the
+  probe log. Its tail spins on a table (`do { } while`) the raw import cannot
+  follow (bad-instruction truncation).
+- `sub_82145968`: decompile FAILED (needs full auto-analysis, not the
+  disassemble-window shortcut). Its logic is already read from the generated
+  C++ instead: iterate second-table entries, build a name, `stricmp` against
+  literals, write the record.
+
+The dump code was removed after the image was obtained
+(`/tmp/opencode/guest_82.bin` kept outside the repo).
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
