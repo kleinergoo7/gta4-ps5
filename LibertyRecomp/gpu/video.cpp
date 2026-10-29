@@ -10765,7 +10765,34 @@ PPC_FUNC_HOOK(sub_82A491E0)
 LOG_DEEP_PROBE(sub_82A13430)
 LOG_DEEP_PROBE(sub_82A50070)
 LOG_DEEP_PROBE(sub_82A41320)
+// Streaming consumer family: three threads start with entry 82798BA0, and
+// these helpers wait on [obj+36]/[obj+40]. If one never returns, it is the
+// consumer that should drain load completions.
+LOG_DEEP_PROBE(sub_82797DB8)
+LOG_DEEP_PROBE(sub_82797E98)
+LOG_DEEP_PROBE(sub_82798398)
+LOG_DEEP_PROBE(sub_82798BA0)
+LOG_DEEP_PROBE(sub_821910D0)
+LOG_DEEP_PROBE(sub_82191DF0)
 #undef LOG_DEEP_PROBE
+
+// Which handle does the streaming consumer park on?
+PPC_FUNC_IMPL(__imp__sub_82798038);
+PPC_FUNC_HOOK(sub_82798038)
+{
+    static std::atomic<uint32_t> s_calls{0};
+    uint32_t n = s_calls.fetch_add(1) + 1;
+    const uint32_t obj = ctx.r3.u32;
+    if (n <= 6)
+    {
+        LOGF_WARNING("[CONSUMER] > 82798038 #{} obj={:#x} h36={:#x} h40={:#x} h4140={:#x}", n,
+                     obj, obj ? PPC_LOAD_U32(obj + 36) : 0, obj ? PPC_LOAD_U32(obj + 40) : 0,
+                     obj ? PPC_LOAD_U32(obj + 4140) : 0);
+    }
+    __imp__sub_82798038(ctx, base);
+    if (n <= 6)
+        LOGF_WARNING("[CONSUMER] < 82798038 #{}", n);
+}
 
 // 82678CD8 is the completion callback handed to pgStreamer::submit by the title
 // load issue path (82679804 passes &LAB_82678cd8). If it never fires, no load

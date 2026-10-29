@@ -867,6 +867,27 @@ and releases per-slot semaphores that nothing waits on, the picture is:
 This is no longer "a missing thread" - it is a mismatch between who is
 signalled and who consumes, in the guest's own state machine.
 
+## The work event IS signalled (measured)
+
+`sub_821910D0` (called from the audio callback `sub_8219A2B8`) does
+`KeSetEvent(0x831D52F0)` and **runs** (8 times in a 60 s run, returns each
+time). `sub_82191DF0` would signal `0x831D5310` and has no caller.
+`sub_821909D0` is not a waiter at all: it releases a semaphore and sets an
+event on completion - it is a producer.
+
+So the earlier assumption that "the work event is never signalled" is wrong: it
+is signalled by the audio path and by the producer itself. Neither the guest
+signal nor a host pulse wakes the parked consumer, and the consumer's queue
+stays empty.
+
+Remaining candidates for the queue-population gap, both static work:
+
+- `sub_8218FFB0` / `sub_82191228`, called by the producer when its own work
+  pointer is null (`loc_82190A64`), are the only paths that could enqueue;
+- `825120E8` (registry request insert) runs 500+ times but its decompile is
+  blocked by the custom prologue at `829FF7B8`, so its append target is still
+  unread.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
