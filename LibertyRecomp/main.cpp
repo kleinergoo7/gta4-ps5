@@ -659,6 +659,29 @@ static void LibertyWatchdogLoop()
                             }
                             fprintf(stderr, "\n");
                         }
+                        // Job queue object (pointer at 0x831D53EC), whose vtable
+                        // 0x820BE4C0 has slot 0 = work-event waker 82190488.
+                        // Nothing wakes the producer; dump the queue state.
+                        {
+                            static uint32_t s_last_job[12] = {0};
+                            static bool s_have_job = false;
+                            const uint32_t job = SafeU32(0x831D53ECu);
+                            uint32_t jw[12] = {job};
+                            if (job)
+                                for (int i = 1; i < 12; i++)
+                                    jw[i] = SafeU32(job + (uint32_t)(i * 4));
+                            bool changed = !s_have_job;
+                            for (int i = 0; i < 12 && !changed; i++)
+                                if (jw[i] != s_last_job[i]) changed = true;
+                            if (changed)
+                            {
+                                fprintf(stderr, "[JOBQ] obj=%08X:", job);
+                                for (int i = 0; i < 12; i++) fprintf(stderr, " %08X", jw[i]);
+                                fprintf(stderr, "\n");
+                                for (int i = 0; i < 12; i++) s_last_job[i] = jw[i];
+                                s_have_job = true;
+                            }
+                        }
                         for (int i = 0; i < 5; i++) s_last_hw[i] = w[i];
                         s_have_hw = true;
                     }
@@ -958,9 +981,6 @@ int main(int argc, char *argv[])
         cli.add_flag("--experiment-clear-ready", experimentClearReady,
                      "DIAGNOSTIC: clear the boot 'ready' byte (0x831D5348) once so the "
                      "wait loop exits; used to study the post-wait dispatcher. Off by default.");
-        cli.add_flag("--experiment-frame-signal", experimentFrameSignal,
-                     "WORKAROUND: release the guest frame-complete semaphore 0xF8000044 "
-                     "on every present. Off by default.");
         cli.add_option("--install-iso", installIso, "Headless install: game ISO file or extracted folder");
         cli.add_option("--install-tu", installTu, "Headless install: title update file or folder to scan");
         cli.add_option("--install-dlc-path", installDlc, "Headless install: DLC package (repeatable)");

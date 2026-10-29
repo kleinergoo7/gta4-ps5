@@ -790,6 +790,23 @@ The only thread in the image that waits on a loader-style semaphore is
 That is the wall in one line: **the loader issues and completes work, but the
 consumer that drains per-slot completions does not exist in this run.**
 
+## Work-event pulse does not unblock the producer (measured, reverted)
+
+The streaming producer thread (`sub_821909D0`, entry #13 in the thread list)
+parks on the guest work event `0x831D52F0`. The waker `sub_821904B8` never runs;
+it is reached only via `sub_82190488`, which is stored in the vtable
+`0x820BE4C0` (slot 0) and has no direct caller.
+
+Pulsing that event from the host at ~60 Hz (`xeKeSetEvent`, labelled
+`--experiment-wake-producer`) produced **no change**: `ready` stayed 0/1 as
+before, `loadstate=1`, `presents=2 draws=6`, registry unchanged. The workaround
+was removed per policy.
+
+So the producer is not blocked *only* on that event, or it wakes and finds no
+work it can act on. The job-queue object behind `[0x831D53EC]` was dumped as
+well; its first word changes from the vtable pointer to `1` between samples and
+no queue counters ever move.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
