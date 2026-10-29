@@ -10714,7 +10714,11 @@ PPC_FUNC_HOOK(sub_82287700)
     // (REX_LOAD has no guard for wild guest addresses).
     const uint32_t obj = ctx.r3.u32;
     if (n <= 6)
-        LOGF_WARNING("[BOOTSTAGE] > sub_82287700 #{} obj={:#x}", n, obj);
+        LOGF_WARNING("[BOOTSTAGE] > sub_82287700 #{} tid={} obj={:#x}", n,
+                     rex::system::XThread::GetCurrentThread()
+                         ? rex::system::XThread::GetCurrentThread()->thread_id()
+                         : 0,
+                     obj);
     __imp__sub_82287700(ctx, base);
     if (n <= 6)
         LOGF_WARNING("[BOOTSTAGE] < sub_82287700 #{}", n);

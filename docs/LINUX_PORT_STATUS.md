@@ -699,6 +699,32 @@ Next: who builds the streaming pool. `sub_82570BC0` ran without building it;
 the remaining static references (`sub_82A703D0`, `sub_82586EE8`,
 `sub_821D0558`) get probes.
 
+## Release path hangs on stale indices, crashes on garbage (measured)
+
+`sub_82287700` (refcount release + indirect virtual cleanup) is reached by two
+routes, and both are sick:
+
+- via `821F6098 -> 82146600`: `82287700#1 obj=0x14A0` returns, `#2 obj=0x4`
+  never returns. No kernel wait follows (main thread stops waiting entirely),
+  so it spins or deadlocks in user code. Callers pass small integers as the
+  object: the chain is `821417C8 -> 821D4900 (ret) -> 821F6098 (r3) ->
+  82146600 -> 82287700`, i.e. 821D4900's return value is used as a table
+  index downstream.
+- via `821CFC48 -> ... -> 821CECC0 -> 821464B8 -> bctrl`: crashes reading
+  guest `0xCADA8000` (uninitialized memory) as an object. 821CECC0 walks a
+  linked list and 82146690 looks the index up in table `0x82C6C3D8`, whose
+  image shows a single entry (`count=1`); index 4 is out of bounds.
+
+Common root candidate: the resource/index tables these paths read are
+underpopulated because the platform table (second table, count 0) and the
+streaming pool (null) were never built. Every downstream computation reads
+zeros or stale heap and takes garbage branches. A probe that dereferenced
+the release object faulted inside the probe itself and was fixed to log
+registers only.
+
+Still open: what `sub_821D4900` returns (its body is spin-loop heavy), and
+whether index 4 / 0x14A0 would be valid with populated tables.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
