@@ -33,6 +33,7 @@
 #include <kernel/arena_guard.h>
 #include <rex/kernel/xboxkrnl/threading.h>
 #include <rex/system/xtypes.h>
+#include <rex/system/xsemaphore.h>
 #include <kernel/heap.h>
 #include <file.h>
 #include <vector>
@@ -314,6 +315,43 @@ extern std::atomic<uint32_t> g_diagDraws;
 // Set by --experiment-clear-ready (see the CLI flag): lets the boot wait loop
 // exit so the post-wait dispatcher can be studied. Off by default.
 static std::atomic<bool> g_experimentClearReady{false};
+
+// Set by --experiment-frame-signal. WORKAROUND (guest frame-complete semaphore
+// has no producer): the stage-2 boot scene update blocks in
+// NtWaitForSingleObject(0xF8000044, infinite), released only by the one-shot
+// guest submit thread. Removal condition: the submit thread recurs per frame
+// or present completion signals the guest object structurally.
+std::atomic<bool> g_experimentFrameSignal{false};
+
+void PortSignalGuestFrameSemaphore()
+{
+    static std::atomic<uint32_t> s_calls{0};
+    static std::atomic<uint32_t> s_failures{0};
+    auto* ks = rex::runtime::current_kernel_state();
+    if (!ks)
+    {
+        if (s_failures.fetch_add(1) + 1 <= 3)
+            LOGF_WARNING("[FRAMESIG] no kernel state; cannot release 0xF8000044");
+        return;
+    }
+    auto object = ks->object_table()->LookupObject<rex::system::XSemaphore>(0xF8000044u);
+    if (!object)
+    {
+        if (s_failures.fetch_add(1) + 1 <= 3)
+            LOGF_WARNING("[FRAMESIG] guest semaphore 0xF8000044 not in the object table");
+        return;
+    }
+    const bool released = object->ReleaseSemaphore(1, nullptr);
+    const uint32_t n = s_calls.fetch_add(1) + 1;
+    if (!released)
+    {
+        if (s_failures.fetch_add(1) + 1 <= 3)
+            LOGF_WARNING("[FRAMESIG] ReleaseSemaphore(0xF8000044, 1) failed at frame {}", n);
+        return;
+    }
+    if (n <= 8 || (n % 100) == 0)
+        LOGF_WARNING("[FRAMESIG] released 0xF8000044 frame#{}", n);
+}
 
 // Safe guest reads for diagnostics: the arena is sparse, so reading an
 // uncommitted page faults (and would fire the arena guard, perturbing the run).
@@ -831,6 +869,7 @@ int main(int argc, char *argv[])
     bool useDefaultWorkingDirectory = false;
     bool forceInstallationCheck = false;
     bool experimentClearReady = false;
+    bool experimentFrameSignal = false;
     bool graphicsApiRetry = false;
     bool diagnostics = false;
     const char *sdlVideoDriver = nullptr;
@@ -857,6 +896,9 @@ int main(int argc, char *argv[])
         cli.add_flag("--experiment-clear-ready", experimentClearReady,
                      "DIAGNOSTIC: clear the boot 'ready' byte (0x831D5348) once so the "
                      "wait loop exits; used to study the post-wait dispatcher. Off by default.");
+        cli.add_flag("--experiment-frame-signal", experimentFrameSignal,
+                     "WORKAROUND: release the guest frame-complete semaphore 0xF8000044 "
+                     "on every present. Off by default.");
         cli.add_option("--install-iso", installIso, "Headless install: game ISO file or extracted folder");
         cli.add_option("--install-tu", installTu, "Headless install: title update file or folder to scan");
         cli.add_option("--install-dlc-path", installDlc, "Headless install: DLC package (repeatable)");
@@ -1647,7 +1689,23 @@ int main(int argc, char *argv[])
         std::_Exit(1);
     }
     g_experimentClearReady.store(experimentClearReady);
+    g_experimentFrameSignal.store(experimentFrameSignal);
     StartLibertyWatchdog();
+    if (experimentFrameSignal)
+    {
+        // WORKAROUND (--experiment-frame-signal): emulate the vblank-driven
+        // frame completion at ~60 Hz on a detached host thread. The guest
+        // frame-complete semaphore 0xF8000044 has no producer in the port;
+        // on hardware the GPU interrupt releases it every vblank.
+        std::thread([] {
+            while (g_libertyWatchdogRunning.load(std::memory_order_relaxed))
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                PortSignalGuestFrameSemaphore();
+            }
+        }).detach();
+        LOGF_WARNING("[FRAMESIG] vblank-emulation thread started (16 ms)");
+    }
     // rexglue's own XThread::Execute log already covers this; suppress the
     // duplicate printf (was polluting stdout with an untagged line).
 #if defined(LIBERTY_RECOMP_DISCORD_RPC)

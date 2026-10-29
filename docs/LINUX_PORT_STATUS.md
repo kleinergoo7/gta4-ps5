@@ -648,6 +648,30 @@ wait needs the record the writer cannot fill. Breaking it needs one drive
 point supplied by the port (table entries, manager pump, or frame pulse),
 not another probe.
 
+## Breakthrough: stage machine reaches stage 7, registry + audio up (measured)
+
+With `--experiment-clear-ready --experiment-frame-signal` combined (the signal
+must be a ~60 Hz vblank-emulation ticker, not per-present — presents stall at
+2, so a present-driven signal runs dry after 2 releases):
+
+- stage loop spins (`sub_821428C8` exits, `sub_821B5890` returns), reaching
+  stage 1 (`sub_8223DDA8` x200), stage 2 (`sub_8223DEE8`), stage 4
+  (`sub_822440F8` x2);
+- stage-7 branch fires: `sub_82141F00 enter lr=0x82142710` — first time ever;
+- registry chain runs: `sub_821FD340` and `sub_82570BC0` enter and exit,
+  `sub_822D3190` exits with ret = manager object, `reg = 0xDD660350`;
+- `sub_825120E8` inserts requests (#1–7, first ever);
+- audio initializes (XMA decoder thread, `Audio system initialized`) and the
+  title theme plays.
+
+Still frozen: `presents=2 draws=6`, `scene=0`, `loadstate=1`.
+`sub_82141F00` entered once and had not exited at t=42 s — it is doing the
+long registry/streaming build or is parked on the next wait. That is the
+current wall.
+
+Neither flag is sufficient alone: clear-ready without the ticker parks stage 2
+on `0xF8000044`; the ticker without clear-ready never reaches the dispatcher.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

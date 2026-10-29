@@ -446,6 +446,10 @@ static bool g_swapChainValid;
 // Progress counters for headless/autonomous bring-up diagnostics: the
 // watchdog thread in main.cpp prints these so a stuck boot is visible
 // without watching the window.
+// Defined in main.cpp (WORKAROUND, see --experiment-frame-signal).
+extern std::atomic<bool> g_experimentFrameSignal;
+void PortSignalGuestFrameSemaphore();
+
 std::atomic<uint32_t> g_diagFramesPresented{0};
 std::atomic<uint32_t> g_diagDraws{0};
 // Rolling signature of the current frame's draw stream: any change in what the
