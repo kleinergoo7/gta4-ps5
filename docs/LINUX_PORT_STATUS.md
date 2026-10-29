@@ -725,6 +725,30 @@ registers only.
 Still open: what `sub_821D4900` returns (its body is spin-loop heavy), and
 whether index 4 / 0x14A0 would be valid with populated tables.
 
+## Loader completes records; only record 0 never starts (measured)
+
+Earlier probes read `record[i].state` as a byte, which is always 0. It is a
+big-endian u32 at `0x831D5498 + i*400 + 8`. Read correctly, one boot sample of
+records 0..3 and the current index gives:
+
+```
+st=[1 2 0 3] idx=0
+```
+
+and it does not change for the whole run.
+
+So the title load path is **not** dead: record 3 reaches state 3 (loaded),
+record 1 sits at 2 (requested, not issued), records 0 and 2 stay at 1 and 0.
+The main thread clears `ready` only for `record[idx].state == 3` with
+`idx = 0`, and record 0 is the one that never leaves 1.
+
+The first table's type names are `DELAYED_IDE`, `DELAYED_IPL`, `ANIMGRP`,
+`HANDLING`, ... so record 0 is the deferred IDE (asset index) load. The other
+types progress; the one the boot waits on does not.
+
+This supersedes the earlier "record never advances, nothing is loaded"
+conclusion, which was an artefact of the byte-sized read.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4

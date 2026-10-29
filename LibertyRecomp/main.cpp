@@ -620,19 +620,47 @@ static void LibertyWatchdogLoop()
                         s_last_tbl = tbl;
                     }
                 }
-                // Resource index table 0x82C6C3D8 (read by 82146690/82287700):
-                // dump on change to see if entries are ever appended.
+                // Resource index table: global 0x82C6C3D8 holds a POINTER to a
+                // heap struct (H+0 entries, H+4 byte array, H+8 count,
+                // H+12 stride). Dump H and entries 0/1/4 on change: entry 4
+                // hangs the release path, so its contents decide between
+                // zeroed, garbage and valid.
                 {
-                    static uint32_t s_last_w[4] = {0, 0, 0, 0};
-                    static bool s_have_w = false;
-                    uint32_t w[4];
-                    for (int i = 0; i < 4; i++) w[i] = SafeU32(0x82C6C3D8u + i * 4);
-                    if (!s_have_w || w[0] != s_last_w[0] || w[1] != s_last_w[1] ||
-                        w[2] != s_last_w[2] || w[3] != s_last_w[3])
+                    static uint32_t s_last_hw[5] = {0, 0, 0, 0, 0};
+                    static bool s_have_hw = false;
+                    const uint32_t h = SafeU32(0x82C6C3D8u);
+                    uint32_t w[5] = {h, 0, 0, 0, 0};
+                    if (h)
                     {
-                        fprintf(stderr, "[RESTBL] %08X %08X %08X %08X\n", w[0], w[1], w[2], w[3]);
-                        for (int i = 0; i < 4; i++) s_last_w[i] = w[i];
-                        s_have_w = true;
+                        for (int i = 0; i < 4; i++) w[i + 1] = SafeU32(h + (uint32_t)(i * 4));
+                    }
+                    if (!s_have_hw || w[0] != s_last_hw[0] || w[1] != s_last_hw[1] ||
+                        w[2] != s_last_hw[2] || w[3] != s_last_hw[3] || w[4] != s_last_hw[4])
+                    {
+                        uint32_t ebase = w[1];
+                        uint32_t stride = w[4] ? w[4] : 16;
+                        fprintf(stderr, "[RESTBL] H=%08X base=%08X arr=%08X cnt=%u stride=%u\n",
+                                w[0], w[1], w[2], w[3], stride);
+                        for (int e = 0; e < 3; e++)
+                        {
+                            int idx = (e == 2) ? 4 : e;
+                            uint32_t eaddr =
+                                (unsigned)(ebase + (uint32_t)idx * stride);
+                            fprintf(stderr, "[RESTBL] entry[%d] @%08X:", idx, eaddr);
+                            for (int k = 0; k < 4; k++)
+                                fprintf(stderr, " %08X", SafeU32(eaddr + (uint32_t)(k * 4)));
+                            uint32_t obj = SafeU32(eaddr);
+                            if (obj != 0 && obj != 0xFFFFFFFFu)
+                            {
+                                uint32_t vptr = SafeU32(obj);
+                                uint32_t tgt =
+                                    (vptr != 0 && vptr != 0xFFFFFFFFu) ? SafeU32(vptr) : 0;
+                                fprintf(stderr, " obj=%08X vptr=%08X tgt=%08X", obj, vptr, tgt);
+                            }
+                            fprintf(stderr, "\n");
+                        }
+                        for (int i = 0; i < 5; i++) s_last_hw[i] = w[i];
+                        s_have_hw = true;
                     }
                 }
                 static uint8_t s_record[400];
@@ -640,6 +668,25 @@ static void LibertyWatchdogLoop()
                 uint8_t now[400];
                 for (int i = 0; i < 400; i++)
                     now[i] = mem_base[0x831D5498u + i];
+                // Also watch records 1..3 (stride 400, state at +8 as a
+                // big-endian u32 - reading a single byte here always yields 0).
+                {
+                    static uint32_t s_states[4] = {0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu,
+                                                   0xFFFFFFFFu};
+                    static bool s_have_states = false;
+                    uint32_t cur[4];
+                    for (int r = 0; r < 4; r++)
+                        cur[r] = SafeU32(0x831D5498u + (uint32_t)r * 400u + 8u);
+                    if (!s_have_states ||
+                        cur[0] != s_states[0] || cur[1] != s_states[1] ||
+                        cur[2] != s_states[2] || cur[3] != s_states[3])
+                    {
+                        fprintf(stderr, "[RECORDS] st=[%u %u %u %u] idx=%u\n", cur[0], cur[1],
+                                cur[2], cur[3], SafeU32(0x831D5340u));
+                        for (int r = 0; r < 4; r++) s_states[r] = cur[r];
+                        s_have_states = true;
+                    }
+                }
                 static bool s_dumped = false;
                 if (!s_dumped) {
                     s_dumped = true;
