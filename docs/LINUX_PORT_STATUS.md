@@ -840,6 +840,33 @@ Unblocking requires either (a) finding and restoring that consumer, or
 workaround that fabricates guest progress, which the project rules allow only
 with a named root cause and removal condition.
 
+## The consumer exists and wakes, but finds nothing to do (measured)
+
+The streaming consumer threads do exist: three threads start with entry
+`sub_82798BA0` and park inside `sub_82798038`. Probing that function gives:
+
+```
+obj=0x82FEEC9C  h36=0x82FEECCC  h40=0  h4140=0xF8000848
+```
+
+so they wait on handle `0xF8000848` (which appears in the parked-handle list).
+Signalling that object from the host (`--experiment-wake-consumer`, event or
+semaphore, ~60 Hz for the whole run) produced 12 successful signals and **no
+change**: record states stayed `[1 2 0 3]`, `loadstate=1`, `presents=2
+draws=6`. The workaround is reverted.
+
+So the consumer is present and wakeable; it wakes and finds no work it can
+process. Combined with the earlier result that the completion callback fires
+and releases per-slot semaphores that nothing waits on, the picture is:
+
+- loads are issued and completed;
+- completions are signalled on per-slot objects nobody waits on;
+- the consumer waits on a different object and, when woken, does not advance
+  any record.
+
+This is no longer "a missing thread" - it is a mismatch between who is
+signalled and who consumes, in the guest's own state machine.
+
 ## Known issues not yet fixed
 
 - Intermittent SIGSEGV during early init (input/XMA setup), roughly 1 in 4
